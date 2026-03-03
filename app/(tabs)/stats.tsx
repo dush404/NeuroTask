@@ -1,15 +1,26 @@
-// NeuroTask — Stats Screen
-// Full productivity statistics: score ring, weekly chart, heatmap, habit performance, focus time.
-
-import { Flame, Target, Trophy, Zap } from "lucide-react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import {
+    Activity,
+    Apple,
+    Book,
+    Circle,
+    Droplet,
+    Flame,
+    Moon,
+    Smile,
+    Star,
+    Target,
+    Trophy,
+    Zap,
+} from "lucide-react-native";
 import React, { useMemo } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GlassCard } from "../../src/components/GlassCard";
 import { HeatmapCalendar } from "../../src/components/HeatmapCalendar";
 import { ProgressRing } from "../../src/components/ProgressRing";
 import { WeeklyGraph } from "../../src/components/WeeklyGraph";
-import { Colors, Spacing, Typography } from "../../src/constants/theme";
+import { Colors, Typography } from "../../src/constants/theme";
 import {
     computeProductivityScore,
     formatDuration,
@@ -19,6 +30,26 @@ import {
 import { useFocusStore } from "../../src/store/useFocusStore";
 import { useHabitStore } from "../../src/store/useHabitStore";
 import { useTaskStore } from "../../src/store/useTaskStore";
+import { statsStyles as styles } from "../../src/styles/stats.styles";
+
+const renderHabitIcon = (iconStr: string, size = 16, color = "#fff") => {
+  switch (iconStr) {
+    case "💧":
+      return <Droplet size={size} color={color} />;
+    case "🏃":
+      return <Activity size={size} color={color} />;
+    case "📚":
+      return <Book size={size} color={color} />;
+    case "🧘":
+      return <Smile size={size} color={color} />;
+    case "😴":
+      return <Moon size={size} color={color} />;
+    case "🥗":
+      return <Apple size={size} color={color} />;
+    default:
+      return <Circle size={size} color={color} />;
+  }
+};
 
 export default function StatsScreen() {
   const { tasks, totalFocusMinutesToday } = useTaskStore();
@@ -55,28 +86,45 @@ export default function StatsScreen() {
     [sessions],
   );
 
+  const insets = useSafeAreaInsets();
+  const headerHeight = Math.max(insets.top, 20) + 60;
+
   return (
-    <SafeAreaView style={styles.safe}>
+    <View style={styles.safe}>
+      {/* Background to match the app theme */}
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        <LinearGradient
+          colors={["#260D0B", "#100403", "#000000"]}
+          style={{ flex: 1 }}
+        />
+      </View>
+
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: headerHeight, paddingBottom: 110 },
+        ]}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.title}>Stats</Text>
-
         {/* Today's score */}
-        <GlassCard style={styles.scoreCard} accentBorder>
+        <GlassCard style={styles.scoreCard} striped={true}>
           <View style={styles.scoreSplit}>
-            <ProgressRing percentage={score} size={100} label="Today" />
+            <ProgressRing
+              percentage={score}
+              size={100}
+              label="Today"
+              color="#4FE179"
+            />
             <View style={styles.scoreDetails}>
               <Text style={styles.scoreTitle}>Productivity Score</Text>
               <View style={styles.scoreRow}>
-                <Target size={14} color={Colors.accent} />
+                <Target size={14} color="#5BA4E5" />
                 <Text style={styles.scoreDetail}>
                   {completedToday} tasks done
                 </Text>
               </View>
               <View style={styles.scoreRow}>
-                <Zap size={14} color={Colors.accent} />
+                <Zap size={14} color="#FFD700" />
                 <Text style={styles.scoreDetail}>
                   {formatDuration(focusToday)} focused
                 </Text>
@@ -93,34 +141,46 @@ export default function StatsScreen() {
 
         {/* All-time stats */}
         <View style={styles.allTimeRow}>
-          <GlassCard style={styles.allTimeCard}>
-            <Trophy size={18} color={Colors.accent} />
+          <GlassCard style={styles.allTimeCard} striped={true}>
+            <Trophy size={18} color="#5BA4E5" />
             <Text style={styles.allTimeNum}>{allTimeCompleted}</Text>
             <Text style={styles.allTimeLabel}>Tasks done</Text>
           </GlassCard>
-          <GlassCard style={styles.allTimeCard}>
-            <Zap size={18} color={Colors.success} />
+          <GlassCard style={styles.allTimeCard} striped={true}>
+            <Zap size={18} color="#4FE179" />
             <Text style={styles.allTimeNum}>
               {formatDuration(allTimeFocus)}
             </Text>
             <Text style={styles.allTimeLabel}>Focus time</Text>
           </GlassCard>
-          <GlassCard style={styles.allTimeCard}>
-            <Text style={{ fontSize: 18 }}>⭐</Text>
+          <GlassCard
+            style={styles.allTimeCard}
+            gradientColors={["#33240D", "#1A1005"]}
+            striped={true}
+          >
+            <Star size={18} color="#FFD700" />
             <Text style={styles.allTimeNum}>{totalXP}</Text>
             <Text style={styles.allTimeLabel}>Habit XP</Text>
           </GlassCard>
         </View>
 
         {/* Weekly chart */}
-        <GlassCard style={styles.chartCard}>
+        <GlassCard
+          style={styles.chartCard}
+          gradientColors={["#1A1025", "#0C0712"]}
+          striped={true}
+        >
           <Text style={styles.chartTitle}>This Week</Text>
           <Text style={styles.chartSub}>Tasks completed per day</Text>
           <WeeklyGraph data={weeklyData} />
         </GlassCard>
 
         {/* Monthly heatmap */}
-        <GlassCard style={styles.chartCard}>
+        <GlassCard
+          style={styles.chartCard}
+          gradientColors={["#161D3A", "#0A1020"]}
+          striped={true}
+        >
           <Text style={styles.chartTitle}>30-Day Heatmap</Text>
           <Text style={styles.chartSub}>Task completion intensity</Text>
           <HeatmapCalendar data={heatmapData} />
@@ -128,7 +188,11 @@ export default function StatsScreen() {
 
         {/* Habit breakdown */}
         {habits.length > 0 && (
-          <GlassCard style={styles.habitCard}>
+          <GlassCard
+            style={styles.habitCard}
+            gradientColors={["#3A120D", "#1A0604"]}
+            striped={true}
+          >
             <Text style={styles.chartTitle}>Habit Performance</Text>
             {habits.map((h) => {
               const rate =
@@ -137,23 +201,37 @@ export default function StatsScreen() {
                   : 0;
               return (
                 <View key={h.id} style={styles.habitRow}>
-                  <Text style={styles.habitIcon}>{h.icon}</Text>
+                  <View style={{ width: 24, alignItems: "center" }}>
+                    {renderHabitIcon(h.icon, 16, h.color)}
+                  </View>
                   <Text style={styles.habitName} numberOfLines={1}>
                     {h.name}
                   </Text>
-                  <Text
+                  <View
                     style={{
-                      color: Colors.textMuted,
-                      fontSize: Typography.fontSizeXS,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 4,
                     }}
                   >
-                    🔥 {h.streak}
-                  </Text>
+                    <Flame size={12} color="#FF6B35" />
+                    <Text
+                      style={{
+                        color: Colors.textMuted,
+                        fontSize: Typography.fontSizeXS,
+                      }}
+                    >
+                      {h.streak}
+                    </Text>
+                  </View>
                   <View style={styles.habitTrack}>
                     <View
                       style={[
                         styles.habitFill,
-                        { width: `${rate * 100}%`, backgroundColor: h.color },
+                        {
+                          width: `${rate * 100}%` as any,
+                          backgroundColor: h.color,
+                        },
                       ]}
                     />
                   </View>
@@ -163,78 +241,7 @@ export default function StatsScreen() {
             })}
           </GlassCard>
         )}
-
-        <View style={{ height: 80 }} />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
-
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "transparent" },
-  content: { padding: Spacing.md, paddingBottom: 100 },
-  title: {
-    fontSize: Typography.fontSizeXXL,
-    fontWeight: Typography.fontWeightBold,
-    color: Colors.textPrimary,
-    marginBottom: Spacing.md,
-  },
-  scoreCard: { marginBottom: Spacing.md },
-  scoreSplit: { flexDirection: "row", alignItems: "center", gap: Spacing.md },
-  scoreDetails: { flex: 1, gap: 8 },
-  scoreTitle: {
-    fontSize: Typography.fontSizeMD,
-    fontWeight: Typography.fontWeightSemiBold,
-    color: Colors.textPrimary,
-  },
-  scoreRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  scoreDetail: { fontSize: Typography.fontSizeSM, color: Colors.textSecondary },
-  allTimeRow: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-    marginBottom: Spacing.md,
-  },
-  allTimeCard: { flex: 1, alignItems: "center", gap: 4 },
-  allTimeNum: {
-    fontSize: Typography.fontSizeLG,
-    fontWeight: Typography.fontWeightBold,
-    color: Colors.textPrimary,
-  },
-  allTimeLabel: {
-    fontSize: Typography.fontSizeXS,
-    color: Colors.textSecondary,
-  },
-  chartCard: { marginBottom: Spacing.md, gap: 8 },
-  chartTitle: {
-    fontSize: Typography.fontSizeMD,
-    fontWeight: Typography.fontWeightSemiBold,
-    color: Colors.textPrimary,
-  },
-  chartSub: {
-    fontSize: Typography.fontSizeXS,
-    color: Colors.textSecondary,
-    marginBottom: 4,
-  },
-  habitCard: { gap: 12 },
-  habitRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  habitIcon: { fontSize: 16 },
-  habitName: {
-    flex: 1,
-    fontSize: Typography.fontSizeSM,
-    color: Colors.textPrimary,
-  },
-  habitTrack: {
-    width: 80,
-    height: 6,
-    backgroundColor: Colors.glass,
-    borderRadius: 3,
-    overflow: "hidden",
-  },
-  habitFill: { height: "100%", borderRadius: 3 },
-  habitPct: {
-    fontSize: Typography.fontSizeXS,
-    color: Colors.textMuted,
-    width: 32,
-    textAlign: "right",
-  },
-});

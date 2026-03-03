@@ -4,7 +4,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { Habit, HabitLog } from "../types/task";
+import { Habit, HabitLog, HabitSlot } from "../types/task";
 
 const todayStr = () => new Date().toISOString().split("T")[0];
 const XP_PER_COMPLETION = 10;
@@ -12,10 +12,16 @@ const XP_STREAK_BONUS = 5; // bonus per 7-day streak milestone
 
 interface HabitState {
   habits: Habit[];
+  slots: HabitSlot[];
 
   addHabit: (habit: Habit) => void;
   updateHabit: (id: string, updates: Partial<Habit>) => void;
   deleteHabit: (id: string) => void;
+
+  // Slots
+  addSlot: (slot: HabitSlot) => void;
+  removeSlot: (id: string) => void;
+  updateSlot: (id: string, updates: Partial<HabitSlot>) => void;
 
   // Check-in: mark today complete/incomplete
   checkIn: (habitId: string, completed: boolean) => void;
@@ -31,6 +37,7 @@ export const useHabitStore = create<HabitState>()(
   persist(
     (set, get) => ({
       habits: [],
+      slots: [],
 
       addHabit: (habit) => set((s) => ({ habits: [...s.habits, habit] })),
 
@@ -41,6 +48,16 @@ export const useHabitStore = create<HabitState>()(
 
       deleteHabit: (id) =>
         set((s) => ({ habits: s.habits.filter((h) => h.id !== id) })),
+
+      addSlot: (slot) => set((s) => ({ slots: [...s.slots, slot] })),
+      removeSlot: (id) =>
+        set((s) => ({ slots: s.slots.filter((sl) => sl.id !== id) })),
+      updateSlot: (id, updates) =>
+        set((s) => ({
+          slots: s.slots.map((sl) =>
+            sl.id === id ? { ...sl, ...updates } : sl,
+          ),
+        })),
 
       checkIn: (habitId, completed) =>
         set((s) => ({
@@ -123,6 +140,7 @@ export const useHabitStore = create<HabitState>()(
     {
       name: "neurotask-habits",
       storage: createJSONStorage(() => AsyncStorage),
+      partialize: (s) => ({ habits: s.habits, slots: s.slots }),
     },
   ),
 );

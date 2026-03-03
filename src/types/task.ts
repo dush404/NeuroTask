@@ -4,6 +4,7 @@ export type Priority = "p1" | "p2" | "p3" | "p4"; // p1=urgent, p4=none
 export type TaskStatus = "todo" | "in_progress" | "done";
 export type ViewMode = "list" | "kanban";
 export type RecurringFrequency = "daily" | "weekly" | "monthly" | "custom";
+export type TaskType = "normal" | "toGo" | "withSubtask";
 
 // ─── Task ────────────────────────────────────────────────────────────────────
 export interface RecurringRule {
@@ -35,10 +36,14 @@ export interface Task {
   notes?: string;
   priority: Priority;
   status: TaskStatus;
+  taskType?: TaskType; // card variant: normal | toGo | withSubtask
   listId: string; // 'inbox' | custom list id
   tags: string[];
   dueDate?: string; // ISO date string
   dueTime?: string; // HH:mm
+  // toGo fields
+  fromLocation?: string;
+  toLocation?: string;
   createdAt: string;
   completedAt?: string;
   estimatedMinutes?: number;
@@ -76,10 +81,23 @@ export interface Habit {
   color: string;
   frequency: HabitFrequency;
   targetDays?: number[]; // for custom frequency
+  targetMinutes?: number; // optional daily focus duration target
   streak: number;
   longestStreak: number;
   totalXP: number;
   logs: HabitLog[];
+  createdAt: string;
+}
+
+// ─── Habit Slot (time-blocked habit session) ──────────────────────────────────
+export interface HabitSlot {
+  id: string;
+  habitId?: string; // optional link to a habit
+  name: string;
+  icon: string;
+  color: string;
+  startTime: string; // HH:MM
+  durationMinutes: number;
   createdAt: string;
 }
 

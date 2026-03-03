@@ -38,7 +38,7 @@ export function getWeeklyCompletionData(tasks: Task[]): number[] {
 }
 
 /**
- * Returns a 30-day heatmap of completion intensity (0–10 scale)
+ * Returns a 60-day heatmap of completion intensity (0–10 scale)
  */
 export function getMonthlyHeatmap(
   tasks: Task[],
@@ -46,7 +46,7 @@ export function getMonthlyHeatmap(
   const result: { date: string; count: number }[] = [];
   const today = new Date();
 
-  for (let i = 29; i >= 0; i--) {
+  for (let i = 59; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
     const dateStr = d.toISOString().split("T")[0];

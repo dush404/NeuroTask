@@ -8,8 +8,9 @@ import {
     AIChatMessage,
     BurnoutMetrics,
     ProductivityScore,
+    Subtask,
     Task,
-    TaskList
+    TaskList,
 } from "../types/task";
 
 // Built-in smart list IDs — never deleted
@@ -70,6 +71,8 @@ interface TaskState {
   deleteTask: (id: string) => void;
   completeTask: (id: string) => void;
   toggleSubtask: (taskId: string, subtaskId: string) => void;
+  addSubtask: (taskId: string, subtask: Subtask) => void;
+  removeSubtask: (taskId: string, subtaskId: string) => void;
   reorderTask: (id: string, newOrder: number) => void;
 
   // List CRUD
@@ -141,6 +144,22 @@ export const useTaskStore = create<TaskState>()(
                       : sub,
                   ),
                 }
+              : t,
+          ),
+        })),
+
+      addSubtask: (taskId, subtask) =>
+        set((s) => ({
+          tasks: s.tasks.map((t) =>
+            t.id === taskId ? { ...t, subtasks: [...t.subtasks, subtask] } : t,
+          ),
+        })),
+
+      removeSubtask: (taskId, subtaskId) =>
+        set((s) => ({
+          tasks: s.tasks.map((t) =>
+            t.id === taskId
+              ? { ...t, subtasks: t.subtasks.filter((s) => s.id !== subtaskId) }
               : t,
           ),
         })),

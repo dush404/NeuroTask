@@ -1,15 +1,33 @@
 // NeuroTask — TimelineBlock (Pixel-Perfect Exoplan Style)
 // Full curved SVG lines, striped cards, horizontal buffer lines, custom icons
 
+import { Check } from "lucide-react-native";
 import React from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Dimensions, Pressable, StyleSheet, Text, View } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, {
+    runOnJS,
+    useAnimatedStyle,
+    useSharedValue,
+    withSpring
+} from "react-native-reanimated";
 import Svg, { Path } from "react-native-svg";
-import { Radius } from "../constants/theme";
+import { Colors, Radius } from "../constants/theme";
+import { springConfig } from "../utils/motionConfig";
 import { StripedBackground } from "./StripedBackground";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type CardVariant = "default" | "teal" | "green" | "compact" | "outlined";
+export type CardVariant =
+  | "default"
+  | "teal"
+  | "green"
+  | "compact"
+  | "outlined"
+  | "purple"
+  | "orange"
+  | "pink"
+  | "red";
 
 export type LineStyle =
   | "straight-muted"
@@ -31,11 +49,13 @@ export interface TimelineTask {
   bufferText?: string; // If present, renders buffer zone *above* this block
   lineStyle?: LineStyle;
   nodeState?: "active" | "muted" | "none";
+  durationMinutes?: number;
 }
 
 interface TimelineBlockProps {
   task: TimelineTask;
   onPress?: () => void;
+  onSwipeComplete?: (id: string) => void;
 }
 
 // ── Card Themes ───────────────────────────────────────────────────────────────
@@ -73,6 +93,30 @@ const CARD_THEMES: Record<
     border: "rgba(255,255,255,0.15)",
     textColor: "#E2E4E9",
     stripeOpacity: 0,
+  },
+  purple: {
+    bg: "#2D1B3E",
+    border: "rgba(168,85,247,0.2)",
+    textColor: "#E9D5FF",
+    stripeOpacity: 0.05,
+  },
+  orange: {
+    bg: "#3F2212",
+    border: "rgba(249,115,22,0.2)",
+    textColor: "#FFEDD5",
+    stripeOpacity: 0.05,
+  },
+  pink: {
+    bg: "#3E1B2D",
+    border: "rgba(236,72,153,0.2)",
+    textColor: "#FCE7F3",
+    stripeOpacity: 0.05,
+  },
+  red: {
+    bg: "#3E1818",
+    border: "rgba(239,68,68,0.2)",
+    textColor: "#FEE2E2",
+    stripeOpacity: 0.05,
   },
 };
 
@@ -141,15 +185,68 @@ const SVGBody = ({ lineStyle }: { lineStyle: LineStyle }) => {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.25;
+
 export const TimelineBlock: React.FC<TimelineBlockProps> = ({
   task,
   onPress,
+  onSwipeComplete,
 }) => {
   const isDone = task.status === "done";
   const variant = task.variant ?? "default";
   const theme = CARD_THEMES[variant];
   const isCompact = variant === "compact";
   const isOutlined = variant === "outlined";
+
+  // Height scaling via duration
+  const minHeight = isCompact
+    ? 38
+    : Math.max(54, (task.durationMinutes || 0) * 1.5);
+
+  // Swipe logic
+  const translateX = useSharedValue(0);
+  const isSwiping = useSharedValue(false);
+
+  const panGesture = Gesture.Pan()
+    .activeOffsetX([-10, 10])
+    .onStart(() => {
+      isSwiping.value = true;
+    })
+    .onUpdate((e) => {
+      if (isDone || !onSwipeComplete) return;
+      translateX.value = Math.max(
+        0,
+        Math.min(e.translationX, SCREEN_WIDTH * 0.4),
+      );
+    })
+    .onEnd(() => {
+      if (isDone || !onSwipeComplete) return;
+      if (translateX.value > SWIPE_THRESHOLD) {
+        translateX.value = withSpring(SCREEN_WIDTH, springConfig, () => {
+          if (onSwipeComplete) {
+            runOnJS(onSwipeComplete)(task.id);
+          }
+        });
+      } else {
+        translateX.value = withSpring(0, springConfig);
+      }
+      isSwiping.value = false;
+    });
+
+  const cardAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+    opacity: isDone ? 0.6 : 1,
+  }));
+
+  const bgIconAnimStyle = useAnimatedStyle(() => {
+    const opacity = translateX.value / SWIPE_THRESHOLD;
+    const scale = Math.min(1.2, Math.max(0.5, opacity));
+    return {
+      opacity: Math.min(1, opacity),
+      transform: [{ scale }],
+    };
+  });
 
   return (
     <View style={styles.block}>
@@ -207,48 +304,66 @@ export const TimelineBlock: React.FC<TimelineBlockProps> = ({
         </View>
 
         {/* Card */}
-        <Pressable
-          style={[
-            styles.card,
-            { backgroundColor: theme.bg, borderColor: theme.border },
-            isCompact && styles.cardCompact,
-            isOutlined && styles.cardOutlined,
-            variant === "green" && styles.cardGreen,
-          ]}
-          onPress={onPress}
-          android_ripple={{ color: "rgba(255,255,255,0.06)" }}
-        >
-          {theme.stripeOpacity > 0 && (
-            <StripedBackground opacity={theme.stripeOpacity} />
+        <View style={styles.cardContainer}>
+          {!isDone && onSwipeComplete && (
+            <Animated.View style={[styles.swipeBackground, bgIconAnimStyle]}>
+              <Check size={28} color={Colors.accent} strokeWidth={3} />
+            </Animated.View>
           )}
 
-          {/* Optional Accent bars for compact cards */}
-          {isCompact && !isDone && <View style={styles.compactAccentTeal} />}
-
-          <View style={[styles.cardBody, isCompact && styles.cardBodyCompact]}>
-            <View style={styles.cardMain}>
-              <Text
+          <GestureDetector gesture={panGesture}>
+            <Animated.View
+              style={[styles.cardWrapper, cardAnimStyle, { minHeight }]}
+            >
+              <Pressable
                 style={[
-                  styles.cardTitle,
-                  { color: theme.textColor },
-                  isCompact && styles.cardTitleCompact,
+                  styles.card,
+                  { backgroundColor: theme.bg, borderColor: theme.border },
+                  isCompact && styles.cardCompact,
+                  isOutlined && styles.cardOutlined,
+                  variant === "green" && styles.cardGreen,
                 ]}
-                numberOfLines={1}
+                onPress={onPress}
+                android_ripple={{ color: "rgba(255,255,255,0.06)" }}
               >
-                {task.title}
-              </Text>
+                {theme.stripeOpacity > 0 && (
+                  <StripedBackground opacity={theme.stripeOpacity} />
+                )}
 
-              {task.subtitle && (
-                <View style={styles.subtitleRow}>
-                  <Text style={styles.subtitleText}>{task.subtitle}</Text>
+                {/* Optional Accent bars for compact cards */}
+                {isCompact && !isDone && (
+                  <View style={styles.compactAccentTeal} />
+                )}
+
+                <View
+                  style={[styles.cardBody, isCompact && styles.cardBodyCompact]}
+                >
+                  <View style={styles.cardMain}>
+                    <Text
+                      style={[
+                        styles.cardTitle,
+                        { color: theme.textColor },
+                        isCompact && styles.cardTitleCompact,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {task.title}
+                    </Text>
+
+                    {task.subtitle && (
+                      <View style={styles.subtitleRow}>
+                        <Text style={styles.subtitleText}>{task.subtitle}</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Right container */}
+                  <View style={styles.cardRight}>{task.rightEmoji}</View>
                 </View>
-              )}
-            </View>
-
-            {/* Right container */}
-            <View style={styles.cardRight}>{task.rightEmoji}</View>
-          </View>
-        </Pressable>
+              </Pressable>
+            </Animated.View>
+          </GestureDetector>
+        </View>
       </View>
     </View>
   );
@@ -362,12 +477,29 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
 
-  // Card
-  card: {
+  // Card container and swipe animation
+  cardContainer: {
     flex: 1,
     marginLeft: 6,
     marginRight: 16,
     marginBottom: 8,
+    position: "relative",
+  },
+  swipeBackground: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(85,182,106,0.15)",
+    borderRadius: Radius.md,
+    alignItems: "flex-start",
+    justifyContent: "center",
+    paddingLeft: 20,
+    borderWidth: 1,
+    borderColor: "rgba(85,182,106,0.3)",
+  },
+  cardWrapper: {
+    flex: 1,
+  },
+  card: {
+    flex: 1,
     borderRadius: Radius.md,
     borderWidth: 1,
     overflow: "hidden",
@@ -381,7 +513,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
   },
   cardGreen: {
-    minHeight: 88, // Tall block for resistance training
+    // legacy green class, dynamic height handles this now
   },
   compactAccentTeal: {
     position: "absolute",

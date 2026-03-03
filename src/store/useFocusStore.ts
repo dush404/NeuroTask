@@ -24,6 +24,7 @@ interface FocusState {
   // Actions
   updateSettings: (s: Partial<PomodoroSettings>) => void;
   startTimer: (taskId?: string) => void;
+  startCustomTimer: (minutes: number, taskId?: string) => void;
   pauseTimer: () => void;
   resumeTimer: () => void;
   resetTimer: () => void;
@@ -66,6 +67,13 @@ export const useFocusStore = create<FocusState>()(
 
       pauseTimer: () => set({ status: "paused" }),
       resumeTimer: () => set({ status: "running" }),
+
+      startCustomTimer: (minutes, taskId) =>
+        set({
+          status: "running",
+          currentTaskId: taskId,
+          secondsLeft: minutes * 60,
+        }),
 
       resetTimer: () =>
         set((st) => ({

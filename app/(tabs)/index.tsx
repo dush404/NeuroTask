@@ -2,38 +2,32 @@
 // Static UI recreation matching reference image down to the pixel
 
 import { LinearGradient } from "expo-linear-gradient";
-import { Plus } from "lucide-react-native";
-import React, { useState } from "react";
 import {
-    Platform,
+    Activity,
+    Dumbbell as DumbbellIcon,
+    Plus,
+    Utensils,
+} from "lucide-react-native";
+import React from "react";
+import {
     ScrollView,
     StyleSheet,
     Text,
     TouchableOpacity,
     View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Path } from "react-native-svg";
-import { NavigationMenu } from "../../src/components/NavigationMenu";
+// PageHeader is now rendered in (tabs)/_layout.tsx for persistence
 import {
     TimelineBlock,
     TimelineTask,
 } from "../../src/components/TimelineBlock";
+import { indexStyles as styles } from "../../src/styles/index.styles";
 
 // ── Icons ──────────────────────────────────────────────────────────────────────
 
-const MenuIcon = () => (
-  <Svg
-    width="18"
-    height="18"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="#fff"
-    strokeWidth={2.5}
-  >
-    <Path d="M4 8h16 M4 16h10" />
-  </Svg>
-);
+// Subcomponents representing custom aesthetic icons for specific timeline tasks
 
 const ArrowDL = ({ color }: { color: string }) => (
   <Text
@@ -63,15 +57,11 @@ const ArrowDR = ({ color }: { color: string }) => (
   </Text>
 );
 
-const RunIcon = () => <Text style={{ fontSize: 12, marginRight: -2 }}>🏃</Text>;
+const RunIcon = () => <Activity size={14} color="#E2E4E9" />;
 
-const ForkKnife = () => (
-  <Text style={{ color: "#77A6B6", fontSize: 16 }}>🍴</Text>
-);
+const ForkKnife = () => <Utensils size={14} color="#77A6B6" />;
 
-const Dumbbell = () => (
-  <Text style={{ color: "#8EAC8E", fontSize: 16 }}>🏋️‍♂️</Text>
-);
+const Dumbbell = () => <DumbbellIcon size={14} color="#8EAC8E" />;
 
 const CheckCircleIcon = () => (
   <Svg width="20" height="20" viewBox="0 0 24 24">
@@ -210,90 +200,54 @@ const EXACT_DEMO_SLOTS: TimelineTask[] = [
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+/**
+ * DashboardExact - The primary schedule view mimicking the reference Exoplan UI.
+ * Orchestrates the header toggle state, score rendering, and mapping the
+ * TimelineBlocks for daily scheduled content.
+ */
 export default function DashboardExact() {
-  const [menuVisible, setMenuVisible] = useState(false);
+  const insets = useSafeAreaInsets();
+  const headerHeight = Math.max(insets.top, 20) + 60;
 
   return (
-    <SafeAreaView style={styles.root} edges={["top"]}>
+    <View style={styles.root}>
       {/* ── Day Header Band (Green Gradient) like the screenshot ── */}
-      <View style={StyleSheet.absoluteFill}>
+      {/* Set to pointerEvents="none" so clicks pass through to components underneath */}
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
         <LinearGradient
-          colors={["#1B3122", "#0F1A13", "#000000"]}
+          colors={["#0D1B2A", "#050A11", "#000000"]}
           style={{ height: 280 }}
           start={[0.5, 0]}
           end={[0.5, 1]}
         />
       </View>
 
-      <View style={styles.headerArea}>
-        {/* Status bar mock spacing removed by SafeAreaView */}
+      <View style={[styles.headerArea, { paddingTop: headerHeight }]}>
+        {/* Week Strip — PageHeader (menu + ring) is now in _layout.tsx */}
+        <View style={styles.weekStrip}>
+          {["M", "T", "W", "T", "F", "S", "S"].map((day, i) => {
+            const num = 20 + i;
+            const isActive = day === "W" && num === 22;
 
-        {/* Top Header Row */}
-        <View style={styles.topRow}>
-          <TouchableOpacity
-            style={styles.menuBtn}
-            activeOpacity={0.8}
-            onPress={() => setMenuVisible(true)}
-          >
-            <MenuIcon />
-          </TouchableOpacity>
+            return (
+              <View key={i} style={styles.dayBox}>
+                {/* Red dot indicator */}
+                {isActive && <View style={styles.redDot} />}
 
-          {/* Week Strip */}
-          <View style={styles.weekStrip}>
-            {["M", "T", "W", "T", "F", "S", "S"].map((day, i) => {
-              const num = 20 + i;
-              const isActive = day === "W" && num === 22;
+                <Text
+                  style={[styles.dayLabel, isActive && styles.dayLabelActive]}
+                >
+                  {day}
+                </Text>
+                <Text style={[styles.dayNum, isActive && styles.dayNumActive]}>
+                  {num}
+                </Text>
 
-              return (
-                <View key={i} style={styles.dayBox}>
-                  {/* Red dot indicator */}
-                  {isActive && <View style={styles.redDot} />}
-
-                  <Text
-                    style={[styles.dayLabel, isActive && styles.dayLabelActive]}
-                  >
-                    {day}
-                  </Text>
-                  <Text
-                    style={[styles.dayNum, isActive && styles.dayNumActive]}
-                  >
-                    {num}
-                  </Text>
-
-                  {/* Underline for active */}
-                  {isActive && <View style={styles.activeUnderline} />}
-                </View>
-              );
-            })}
-          </View>
-
-          {/* Score Ring */}
-          <View style={styles.scoreRingWrapper}>
-            {/* SVG Ring background overlapping circular trace */}
-            <Svg width="36" height="36" style={{ position: "absolute" }}>
-              <Circle
-                cx="18"
-                cy="18"
-                r="15"
-                stroke="#1A3324"
-                strokeWidth="4"
-                fill="none"
-              />
-              {/* Active portion showing 68% */}
-              <Circle
-                cx="18"
-                cy="18"
-                r="15"
-                stroke="#4FE179"
-                strokeWidth="4"
-                fill="none"
-                strokeDasharray="94"
-                strokeDashoffset="30"
-                strokeLinecap="round"
-              />
-            </Svg>
-            <Text style={styles.scoreText}>68</Text>
-          </View>
+                {/* Underline for active */}
+                {isActive && <View style={styles.activeUnderline} />}
+              </View>
+            );
+          })}
         </View>
       </View>
 
@@ -337,140 +291,14 @@ export default function DashboardExact() {
           <Plus size={22} color="#fff" strokeWidth={2.5} />
         </View>
       </TouchableOpacity>
-
-      {/* Slide-out Navigation Menu */}
-      <NavigationMenu
-        visible={menuVisible}
-        onClose={() => setMenuVisible(false)}
-      />
-    </SafeAreaView>
+    </View>
   );
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: "#000000",
-  },
-
-  headerArea: {
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 20,
-    zIndex: 10,
-  },
-  topRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-
-  // Menu Btn
-  menuBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#2B322F",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  // Week Strip
-  weekStrip: {
-    flexDirection: "row",
-    flex: 1,
-    justifyContent: "space-evenly",
-    marginHorizontal: 12,
-  },
-  dayBox: {
-    alignItems: "center",
-    position: "relative",
-  },
-  redDot: {
-    position: "absolute",
-    top: -4,
-    right: -2,
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: "#F03A47",
-  },
-  dayLabel: {
-    fontSize: 10,
-    color: "rgba(255,255,255,0.4)",
-    fontWeight: "600",
-    marginBottom: 4,
-  },
-  dayLabelActive: {
-    color: "#fff",
-  },
-  dayNum: {
-    fontSize: 12,
-    color: "rgba(255,255,255,0.4)",
-    fontWeight: "600",
-  },
-  dayNumActive: {
-    color: "#fff",
-    fontWeight: "bold",
-  },
-  activeUnderline: {
-    marginTop: 4,
-    width: 24,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: "rgba(255,255,255,0.3)",
-  },
-
-  // Score Ring
-  scoreRingWrapper: {
-    width: 36,
-    height: 36,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  scoreText: {
-    fontSize: 12,
-    fontWeight: "bold",
-    color: "#fff",
-  },
-
-  // Timeline
-  timelineScroll: {
-    flex: 1,
-  },
-  timelineContent: {
-    paddingBottom: Platform.OS === "ios" ? 40 : 20,
-  },
-
-  // FAB
-  fab: {
-    position: "absolute",
-    bottom: Platform.OS === "ios" ? 100 : 80,
-    right: 28,
-    width: 46,
-    height: 46,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  fabGlow: {
-    position: "absolute",
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: "rgba(85,182,106,0.3)",
-    top: -4,
-    left: -4,
-  },
-  fabInner: {
-    width: "100%",
-    height: "100%",
-    borderRadius: 23,
-    backgroundColor: "#1A221F",
-    borderWidth: 1.5,
-    borderColor: "#4FE179",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-});
+/**
+ * Centralized styling configuration defining the pixel-perfect layout,
+ * colors, typography spacing, sizing, and positioning rules.
+ */
+// Styles moved to ../../src/styles/index.styles.ts

@@ -11,15 +11,15 @@ interface HeatmapCalendarProps {
   color?: string;
 }
 
-const CELL = 28;
+const CELL = 22;
 const GAP = 4;
-const COLS = 7;
-const ROWS = Math.ceil(30 / COLS);
+const ROWS = 7;
 
 export const HeatmapCalendar: React.FC<HeatmapCalendarProps> = ({
   data,
   color = Colors.accent,
 }) => {
+  const COLS = Math.ceil(data.length / ROWS);
   const width = COLS * (CELL + GAP);
   const height = ROWS * (CELL + GAP);
 
@@ -27,8 +27,8 @@ export const HeatmapCalendar: React.FC<HeatmapCalendarProps> = ({
     <View style={styles.container}>
       <Svg width={width} height={height}>
         {data.map((item, i) => {
-          const col = i % COLS;
-          const row = Math.floor(i / COLS);
+          const col = Math.floor(i / ROWS);
+          const row = i % ROWS;
           const x = col * (CELL + GAP);
           const y = row * (CELL + GAP);
           const intensity = Math.min(item.count / 10, 1);
@@ -49,7 +49,7 @@ export const HeatmapCalendar: React.FC<HeatmapCalendarProps> = ({
               <SvgText
                 x={x + CELL / 2}
                 y={y + CELL / 2 + 4}
-                fontSize={9}
+                fontSize={8}
                 fill={intensity > 0.5 ? "#fff" : Colors.textMuted}
                 textAnchor="middle"
               >

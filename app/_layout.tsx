@@ -1,6 +1,3 @@
-// NeuroTask — Root Layout (Exoplan Style)
-// Pure black background, no orbs — clean dark base like Exoplan.
-
 import { DarkTheme, ThemeProvider } from "@react-navigation/native";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -31,16 +28,30 @@ export default function RootLayout() {
           screenOptions={{
             headerShown: false,
             contentStyle: { backgroundColor: "#0D0D0D" },
-            animation: "fade",
+            // Custom screen transition config
+            animation: "slide_from_right",
+            animationDuration: 300,
+            fullScreenGestureEnabled: true,
           }}
         >
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen
+            name="(tabs)"
+            options={{
+              headerShown: false,
+              // Fade for root tab transitions
+              animation: "fade",
+              animationDuration: 300,
+            }}
+          />
           <Stack.Screen
             name="ai-chat"
             options={{
               presentation: "modal",
               headerShown: false,
               animation: "slide_from_bottom",
+              animationDuration: 400, // Slightly slower for modal
+              gestureEnabled: true,
+              gestureDirection: "vertical",
             }}
           />
         </Stack>
