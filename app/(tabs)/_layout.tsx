@@ -14,6 +14,7 @@ import React, { useMemo } from "react";
 import { StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PageHeader } from "../../src/components/PageHeader";
+import { WeekStripHeader } from "../../src/components/WeekStripHeader";
 import { Colors, Spacing } from "../../src/constants/theme";
 
 // Map route segments to display titles
@@ -127,7 +128,9 @@ export default function TabLayout() {
         ]}
         pointerEvents="box-none"
       >
-        <PageHeader title={title} />
+        <PageHeader title={title}>
+          {(pathname === "/" || pathname === "") && <WeekStripHeader />}
+        </PageHeader>
       </View>
     </View>
   );

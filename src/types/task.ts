@@ -1,10 +1,11 @@
 // NeuroTask — Core Types & Interfaces (v2)
 
-export type Priority = "p1" | "p2" | "p3" | "p4"; // p1=urgent, p4=none
+export type Priority = 1 | 2 | 3 | 4; // 1=urgent, 4=none
 export type TaskStatus = "todo" | "in_progress" | "done";
 export type ViewMode = "list" | "kanban";
 export type RecurringFrequency = "daily" | "weekly" | "monthly" | "custom";
-export type TaskType = "normal" | "toGo" | "withSubtask";
+export type TaskType = "normal" | "toGo" | "withSubtask" | "project" | "manual";
+export type EnergyType = "deep" | "light";
 
 // ─── Task ────────────────────────────────────────────────────────────────────
 export interface RecurringRule {
@@ -36,11 +37,14 @@ export interface Task {
   notes?: string;
   priority: Priority;
   status: TaskStatus;
-  taskType?: TaskType; // card variant: normal | toGo | withSubtask
-  listId: string; // 'inbox' | custom list id
+  taskType?: TaskType;
+  listId: string;
+  projectId?: string;
   tags: string[];
+  emoji?: string;
   dueDate?: string; // ISO date string
   dueTime?: string; // HH:mm
+  reminder?: string; // ISO date-time string
   // toGo fields
   fromLocation?: string;
   toLocation?: string;
@@ -50,6 +54,7 @@ export interface Task {
   actualMinutes?: number;
   subtasks: Subtask[];
   recurring?: RecurringRule;
+  energyType?: EnergyType;
   assigneeId?: string; // collaboration-ready
   comments: TaskComment[];
   sortOrder: number; // for drag-reorder

@@ -65,6 +65,10 @@ interface TaskState {
   activeListId: string;
   totalFocusMinutesToday: number;
 
+  // Schedule filtering state
+  scheduleDate: string; // ISO yyyy-MM-dd
+  setScheduleDate: (date: string) => void;
+
   // Task CRUD
   addTask: (task: Task) => void;
   updateTask: (id: string, updates: Partial<Task>) => void;
@@ -111,6 +115,8 @@ export const useTaskStore = create<TaskState>()(
       isAILoading: false,
       activeListId: "inbox",
       totalFocusMinutesToday: 0,
+      scheduleDate: new Date().toISOString().split("T")[0],
+      setScheduleDate: (scheduleDate) => set({ scheduleDate }),
 
       // ── Task CRUD ──────────────────────────────────────────────────────────
       addTask: (task) => set((s) => ({ tasks: [task, ...s.tasks] })),

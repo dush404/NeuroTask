@@ -6,10 +6,6 @@ import React, { useCallback, useMemo, useState } from "react";
 import {
     Alert,
     FlatList,
-    Keyboard,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
     Pressable,
     ScrollView,
     Text,
@@ -20,6 +16,7 @@ import {
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import Animated, { FadeInUp, Layout } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ScheduleTaskSheet } from "../../src/components/ScheduleTaskSheet";
 import { TaskCard } from "../../src/components/TaskCard";
 import { TaskDetailSheet } from "../../src/components/TaskDetailSheet";
 import { TimelineBlock } from "../../src/components/TimelineBlock";
@@ -61,17 +58,25 @@ const SUB_CATEGORIES = [
   { id: "completed", label: "Done", color: "#4CAF50" },
 ];
 
-const PRIORITY_META: Record<string, { color: string; bg: string }> = {
-  p1: { color: Colors.priorityHigh, bg: "rgba(255,77,109,0.12)" },
-  p2: { color: Colors.priorityMedium, bg: "rgba(245,158,11,0.12)" },
-  p3: { color: Colors.priorityLow, bg: "rgba(76,175,80,0.12)" },
-  p4: { color: Colors.textMuted, bg: "rgba(255,255,255,0.04)" },
+const PRIORITY_META: Record<number, { color: string; bg: string }> = {
+  1: { color: Colors.priorityHigh, bg: "rgba(255,77,109,0.12)" },
+  2: { color: Colors.priorityMedium, bg: "rgba(245,158,11,0.12)" },
+  3: { color: Colors.priorityLow, bg: "rgba(76,175,80,0.12)" },
+  4: { color: Colors.textMuted, bg: "rgba(255,255,255,0.04)" },
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function TasksScreen() {
-  const { tasks, addTask, updateTask, deleteTask } = useTaskStore();
+  const {
+    tasks,
+    addTask,
+    updateTask,
+    deleteTask,
+    addSubtask,
+    toggleSubtask,
+    removeSubtask,
+  } = useTaskStore();
   const insets = useSafeAreaInsets();
   const headerHeight = Math.max(insets.top, 20) + 60;
   const [query, setQuery] = useState("");
@@ -80,10 +85,7 @@ export default function TasksScreen() {
   const [activeSubCategory, setActiveSubCategory] = useState("all");
 
   // Add Task Modal
-  const [showAdd, setShowAdd] = useState(false);
-  const [newTitle, setNewTitle] = useState("");
-  const [newDueDate, setNewDueDate] = useState(todayStr());
-  const [newPriority, setNewPriority] = useState<"p1" | "p2" | "p3">("p3");
+  const [sheetTask, setSheetTask] = useState<Task | null>(null);
 
   // Detail sheet
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -153,26 +155,23 @@ export default function TasksScreen() {
     [deleteTask],
   );
 
-  const handleAddTask = () => {
-    if (!newTitle.trim()) return;
-    addTask({
+  const handleCreateTask = () => {
+    const newTask: Task = {
       id: `task-${Date.now()}`,
-      title: newTitle.trim(),
-      priority: newPriority,
+      title: "",
+      priority: 4,
       status: "todo",
       listId: activeCategory === "all" ? "inbox" : activeCategory,
       tags: [],
-      dueDate: newDueDate || undefined,
+      dueDate: todayStr(),
       createdAt: new Date().toISOString(),
       subtasks: [],
       comments: [],
       sortOrder: Date.now(),
-    });
-    setNewTitle("");
-    setNewDueDate(todayStr());
-    setNewPriority("p3");
-    setShowAdd(false);
-    Keyboard.dismiss();
+      estimatedMinutes: 30,
+    };
+    addTask(newTask);
+    setSheetTask(newTask);
   };
 
   const renderTaskCard = ({ item, index }: { item: Task; index: number }) => (
@@ -386,7 +385,7 @@ export default function TasksScreen() {
         {/* ── FAB ───────────────────────────────────────────────────────── */}
         <TouchableOpacity
           style={[styles.fab, { bottom: Math.max(insets.bottom, 16) + 12 }]}
-          onPress={() => setShowAdd(true)}
+          onPress={handleCreateTask}
           activeOpacity={0.85}
         >
           <LinearGradient
@@ -399,104 +398,34 @@ export default function TasksScreen() {
           </LinearGradient>
         </TouchableOpacity>
 
-        {/* ── Add Task Modal ────────────────────────────────────────────── */}
-        <Modal
-          visible={showAdd}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setShowAdd(false)}
-        >
-          <Pressable
-            style={styles.modalOverlay}
-            onPress={() => {
-              Keyboard.dismiss();
-              setShowAdd(false);
-            }}
-          />
-          <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
-            style={styles.modalSheet}
-          >
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>New Task</Text>
-
-            <TextInput
-              style={styles.modalInput}
-              placeholder="What do you need to do?"
-              placeholderTextColor={Colors.textMuted}
-              value={newTitle}
-              onChangeText={setNewTitle}
-              autoFocus
-              returnKeyType="done"
-              onSubmitEditing={handleAddTask}
-            />
-
-            <Text style={styles.modalLabel}>When</Text>
-            <View style={styles.quickDateRow}>
-              {[
-                { label: "Today", val: todayStr() },
-                { label: "Tomorrow", val: tomorrowStr() },
-                { label: "Next Week", val: nextWeekStr() },
-                { label: "No Date", val: "" },
-              ].map(({ label, val }) => (
-                <Pressable
-                  key={label}
-                  style={[
-                    styles.quickDateChip,
-                    newDueDate === val && styles.quickDateChipActive,
-                  ]}
-                  onPress={() => setNewDueDate(val)}
-                >
-                  <Text
-                    style={[
-                      styles.quickDateText,
-                      newDueDate === val && styles.quickDateTextActive,
-                    ]}
-                  >
-                    {label}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-
-            <Text style={styles.modalLabel}>Priority</Text>
-            <View style={styles.priorityRow}>
-              {(["p1", "p2", "p3"] as const).map((p) => {
-                const active = newPriority === p;
-                const { color, bg } = PRIORITY_META[p];
-                return (
-                  <Pressable
-                    key={p}
-                    style={[
-                      styles.priorityBtn,
-                      active && { backgroundColor: bg, borderColor: color },
-                    ]}
-                    onPress={() => setNewPriority(p)}
-                  >
-                    <View
-                      style={[
-                        styles.priorityDot,
-                        { backgroundColor: active ? color : Colors.textMuted },
-                      ]}
-                    />
-                    <Text style={[styles.priorityBtnText, active && { color }]}>
-                      {p === "p1" ? "High" : p === "p2" ? "Med" : "Low"}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            <TouchableOpacity
-              style={[styles.saveBtn, !newTitle.trim() && { opacity: 0.4 }]}
-              onPress={handleAddTask}
-              activeOpacity={0.85}
-              disabled={!newTitle.trim()}
-            >
-              <Text style={styles.saveBtnText}>Add Task</Text>
-            </TouchableOpacity>
-          </KeyboardAvoidingView>
-        </Modal>
+        <ScheduleTaskSheet
+          task={sheetTask}
+          visible={!!sheetTask}
+          onClose={() => {
+            if (sheetTask) {
+              const freshTasks = useTaskStore.getState().tasks;
+              const latestTask = freshTasks.find((t) => t.id === sheetTask.id);
+              if (
+                latestTask &&
+                !latestTask.title.trim() &&
+                latestTask.createdAt === sheetTask.createdAt
+              ) {
+                deleteTask(sheetTask.id);
+              }
+            }
+            setSheetTask(null);
+          }}
+          onUpdate={updateTask}
+          onAddSubtask={(taskId, subtask) =>
+            addSubtask(taskId, {
+              id:
+                Date.now().toString() + Math.random().toString(36).substring(7),
+              ...subtask,
+            })
+          }
+          onToggleSubtask={toggleSubtask}
+          onDeleteSubtask={removeSubtask}
+        />
 
         {/* ── Task Detail Sheet ──────────────────────────────────────────── */}
         <TaskDetailSheet
