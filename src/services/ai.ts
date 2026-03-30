@@ -14,7 +14,7 @@ const openRouterHeaders = {
   Authorization: `Bearer ${API_KEY}`,
   "Content-Type": "application/json",
   "HTTP-Referer": "https://neurotask.app",
-  "X-Title": "NeuroTask",
+  "X-Title": "Shyra",
 };
 
 // ---------- Task Breakdown ----------

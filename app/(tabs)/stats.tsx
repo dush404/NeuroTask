@@ -1,17 +1,17 @@
 import { LinearGradient } from "expo-linear-gradient";
 import {
-    Activity,
-    Apple,
-    Book,
-    Circle,
-    Droplet,
-    Flame,
-    Moon,
-    Smile,
-    Star,
-    Target,
-    Trophy,
-    Zap,
+  Activity,
+  Apple,
+  Book,
+  Circle,
+  Droplet,
+  Flame,
+  Moon,
+  Smile,
+  Star,
+  Target,
+  Trophy,
+  Zap,
 } from "lucide-react-native";
 import React, { useMemo } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
@@ -22,10 +22,10 @@ import { ProgressRing } from "../../src/components/ProgressRing";
 import { WeeklyGraph } from "../../src/components/WeeklyGraph";
 import { Colors, Typography } from "../../src/constants/theme";
 import {
-    computeProductivityScore,
-    formatDuration,
-    getMonthlyHeatmap,
-    getWeeklyCompletionData,
+  computeProductivityScore,
+  formatDuration,
+  getMonthlyHeatmap,
+  getWeeklyCompletionData,
 } from "../../src/features/stats/statsEngine";
 import { useFocusStore } from "../../src/store/useFocusStore";
 import { useHabitStore } from "../../src/store/useHabitStore";
@@ -99,10 +99,25 @@ export default function StatsScreen() {
         />
       </View>
 
+      {/* ── Top Foreground Mask for Smooth Scroll Fade ── */}
+      <LinearGradient
+        colors={["#260D0B", "#260D0B", "#260D0B00"]}
+        locations={[0, 0.7, 1]}
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: headerHeight + 20,
+          zIndex: 5,
+        }}
+        pointerEvents="none"
+      />
+
       <ScrollView
         contentContainerStyle={[
           styles.content,
-          { paddingTop: headerHeight, paddingBottom: 110 },
+          { paddingTop: headerHeight + 20, paddingBottom: 110 },
         ]}
         showsVerticalScrollIndicator={false}
       >

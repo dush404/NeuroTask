@@ -9,6 +9,7 @@ import { Colors, Radius } from "../constants/theme";
 import { useFocusStore } from "../store/useFocusStore";
 import { useHabitStore } from "../store/useHabitStore";
 import { HabitSlot } from "../types/task";
+import { StripedBackground } from "./StripedBackground";
 
 interface Props {
   slot: HabitSlot;
@@ -37,7 +38,8 @@ export const HabitSlotCard: React.FC<Props> = ({ slot }) => {
   const router = useRouter();
 
   return (
-    <View style={[styles.card, { borderColor: `${slot.color}25` }]}>
+    <View style={[styles.card, { borderColor: `${slot.color}40` }]}>
+      <StripedBackground opacity={0.12} />
       {/* Left color stripe */}
       <View style={[styles.stripe, { backgroundColor: slot.color }]} />
 
@@ -87,11 +89,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    backgroundColor: "#1A1F24",
-    borderRadius: Radius.md,
-    borderWidth: 1,
+    backgroundColor: "rgba(0,0,0,0.2)",
+    borderRadius: Radius.lg,
+    borderWidth: 1.5,
     marginBottom: 8,
     overflow: "hidden",
+    paddingLeft: 8,
     paddingRight: 8,
     paddingVertical: 10,
   },

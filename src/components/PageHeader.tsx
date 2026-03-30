@@ -5,6 +5,7 @@
 import { Menu } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import Animated, { FadeInLeft, FadeInRight } from "react-native-reanimated";
 import Svg, { Circle as SvgCircle } from "react-native-svg";
 import { Colors } from "../constants/theme";
 import { useTaskStore } from "../store/useTaskStore";
@@ -107,11 +108,29 @@ export const PageHeader: React.FC<PageHeaderProps> = ({ title, children }) => {
           <Menu size={20} color={Colors.textSecondary} />
         </TouchableOpacity>
         {showNav ? (
-          <TopNavItems />
+          <Animated.View
+            key="nav"
+            entering={FadeInLeft.springify().damping(20).stiffness(200)}
+            style={{ flex: 1 }}
+          >
+            <TopNavItems />
+          </Animated.View>
         ) : children ? (
-          <View style={{ flex: 1 }}>{children}</View>
+          <Animated.View
+            key="children"
+            entering={FadeInRight.springify().damping(20).stiffness(200)}
+            style={{ flex: 1 }}
+          >
+            {children}
+          </Animated.View>
         ) : (
-          <Text style={styles.headerTitle}>{title}</Text>
+          <Animated.View
+            key="title"
+            entering={FadeInRight.springify().damping(20).stiffness(200)}
+            style={{ flex: 1, justifyContent: "center" }}
+          >
+            <Text style={styles.headerTitle}>{title}</Text>
+          </Animated.View>
         )}
       </View>
       <CompletionRing
@@ -136,6 +155,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
     flex: 1,
+    height: 40,
   },
   menuBtn: {
     width: 40,

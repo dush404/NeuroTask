@@ -1,33 +1,92 @@
-import DateTimePicker from "@react-native-community/datetimepicker";
-import { BlurView } from "expo-blur";
-import { LinearGradient } from "expo-linear-gradient";
+﻿import { BlurView } from "expo-blur";
 import {
+  AlertCircle,
+  Briefcase,
   Calendar,
   Check,
   ChevronDown,
+  ChevronsDown,
+  ChevronsUp,
   ChevronUp,
   Clock,
-  Plus,
+  Minus,
+  Navigation,
   Trash2,
+  X,
 } from "lucide-react-native";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
-  Alert,
-  KeyboardAvoidingView,
+  Dimensions,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
-import { Colors, Radius, Spacing } from "../constants/theme";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 import { useTaskStore } from "../store/useTaskStore";
 import { Priority, Subtask, Task, TaskType } from "../types/task";
-import { PrioritySelector } from "./PrioritySelector";
-import { ProjectSelector } from "./ProjectSelector";
+import { InlineDatePicker, InlineTimePicker } from "./InlineWheelPickers";
+import { StripedBackground } from "./StripedBackground";
+const { height: SCREEN_HEIGHT } = Dimensions.get("window");
+const PRIORITY_OPTIONS: {
+  value: Priority;
+  label: string;
+  color: string;
+  icon: React.ReactNode;
+}[] = [
+  {
+    value: 1,
+    label: "Urgent",
+    color: "#FF4D6D",
+    icon: <AlertCircle size={14} color="#FF4D6D" />,
+  },
+  {
+    value: 2,
+    label: "High",
+    color: "#F59E0B",
+    icon: <ChevronsUp size={14} color="#F59E0B" />,
+  },
+  {
+    value: 3,
+    label: "Medium",
+    color: "#4CAF50",
+    icon: <Minus size={14} color="#4CAF50" />,
+  },
+  {
+    value: 4,
+    label: "Low",
+    color: "#5BA4E5",
+    icon: <ChevronsDown size={14} color="#5BA4E5" />,
+  },
+];
+const TASK_TYPE_OPTIONS: {
+  value: TaskType;
+  label: string;
+}[] = [
+  {
+    value: "normal",
+    label: "Task",
+  },
+  {
+    value: "project",
+    label: "Project",
+  },
+  {
+    value: "toGo",
+    label: "To Go",
+  },
+];
 
 function getIsoDate(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
@@ -57,6 +116,41 @@ function getMinuteOfDay(time?: string) {
   return hour * 60 + minute;
 }
 
+function formatDisplayDate(iso: string) {
+  if (!iso) return "DD . MM . YYYY";
+  const [y, m, d] = iso.split("-");
+  return `${d} . ${m} . ${y}`;
+}
+
+function addMinutesToTime(time: string, minutesToAdd: number) {
+  const minuteOfDay = getMinuteOfDay(time);
+  if (minuteOfDay === null) return "";
+  const total = (minuteOfDay + minutesToAdd) % (24 * 60);
+  const normalized = total < 0 ? total + 24 * 60 : total;
+  const hours = Math.floor(normalized / 60);
+  const minutes = normalized % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function formatDuration(minutes?: number | null) {
+  if (!minutes || minutes <= 0) return "No duration";
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+}
+
+function getDurationBetween(start?: string, end?: string) {
+  if (!start || !end) return null;
+  const startMins = getMinuteOfDay(start);
+  const endMins = getMinuteOfDay(end);
+  if (startMins === null || endMins === null) return null;
+
+  let diff = endMins - startMins;
+  if (diff < 0) diff += 24 * 60;
+  return diff;
+}
+
 interface ScheduleTaskSheetProps {
   task: Task | null;
   visible: boolean;
@@ -78,7 +172,7 @@ export function ScheduleTaskSheet({
   onDeleteSubtask,
   onLaunchAI,
 }: ScheduleTaskSheetProps) {
-  const { lists } = useTaskStore();
+  const { lists, deleteTask } = useTaskStore();
   const [title, setTitle] = useState("");
   const [newSubtask, setNewSubtask] = useState("");
   const [startTime, setStartTime] = useState("");
@@ -87,71 +181,103 @@ export function ScheduleTaskSheet({
   const [showEndPicker, setShowEndPicker] = useState(false);
   const [priority, setPriority] = useState<Priority>(3);
   const [taskType, setTaskType] = useState<TaskType>("normal");
-  const [customType, setCustomType] = useState("");
-  const [emoji, setEmoji] = useState("");
   const [listId, setListId] = useState("inbox");
   const [dueDate, setDueDate] = useState("");
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [notes, setNotes] = useState("");
+  const [fromLocation, setFromLocation] = useState("");
+  const [toLocation, setToLocation] = useState("");
+  const [travelMode, setTravelMode] = useState("plane");
+  const [subtasks, setSubtasks] = useState<Subtask[]>([]);
+  const titleRef = useRef<TextInput>(null);
+
+  // ── Animation state ─────────────────────────────────────────────
+  const [internalVisible, setInternalVisible] = useState(false);
+  const sheetTranslateY = useSharedValue(SCREEN_HEIGHT);
+  const bgOpacity = useSharedValue(0);
+  const kbHeight = useSharedValue(0);
+
+  // Sync internal visibility and trigger animations
+  useEffect(() => {
+    if (visible) {
+      setInternalVisible(true);
+      requestAnimationFrame(() => {
+        sheetTranslateY.value = withSpring(0, {
+          damping: 24,
+          stiffness: 200,
+          mass: 0.8,
+        });
+        bgOpacity.value = withTiming(1, { duration: 250 });
+      });
+    } else if (internalVisible) {
+      Keyboard.dismiss();
+      sheetTranslateY.value = withSpring(SCREEN_HEIGHT, {
+        damping: 24,
+        stiffness: 200,
+        mass: 0.8,
+      });
+      bgOpacity.value = withTiming(0, { duration: 250 }, (isFinished) => {
+        if (isFinished) {
+          runOnJS(setInternalVisible)(false);
+        }
+      });
+    }
+  }, [visible, internalVisible]);
+
+  // Keyboard listeners
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    const showSub = Keyboard.addListener("keyboardWillShow", (e) => {
+      kbHeight.value = withTiming(e.endCoordinates.height, { duration: 250 });
+    });
+    const hideSub = Keyboard.addListener("keyboardWillHide", () => {
+      kbHeight.value = withTiming(0, { duration: 250 });
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   useEffect(() => {
-    if (task && visible) {
-      setTitle(task.title);
-      setPriority((task.priority as Priority) || 4);
-      setTaskType(task.taskType || "normal");
-      setListId(task.listId || "inbox");
-      const st = task.dueTime || "";
-      setStartTime(st);
-      setDueDate(task.dueDate || getIsoDate(new Date()));
-      setEmoji(task.emoji || "");
-      setNotes(task.notes || "");
+    if (!task || !visible) return;
 
-      if (st && task.estimatedMinutes) {
-        const [h, m] = st.split(":").map(Number);
-        if (!isNaN(h) && !isNaN(m)) {
-          const date = new Date(0, 0, 0, h, m + task.estimatedMinutes);
-          const eh = date.getHours().toString().padStart(2, "0");
-          const em = date.getMinutes().toString().padStart(2, "0");
-          setEndTime(`${eh}:${em}`);
-        } else {
-          setEndTime("");
-        }
-      } else {
-        setEndTime("");
-      }
-    }
+    const todayIso = getIsoDate(new Date());
+    const initialStartTime = task.dueTime ?? "";
+    const initialDuration = task.estimatedMinutes ?? 0;
+
+    setTitle(task.title ?? "");
+    setNewSubtask("");
+    setStartTime(initialStartTime);
+    setEndTime(
+      initialStartTime && initialDuration > 0
+        ? addMinutesToTime(initialStartTime, initialDuration)
+        : "",
+    );
+    setShowStartPicker(false);
+    setShowEndPicker(false);
+    setPriority(task.priority ?? 3);
+    setTaskType(task.taskType ?? "normal");
+    setListId(task.listId ?? "inbox");
+    setDueDate(task.dueDate ?? todayIso);
+    setShowDatePicker(false);
+    setNotes(task.notes ?? "");
+    setFromLocation(task.fromLocation ?? "");
+    setToLocation(task.toLocation ?? "");
+    setTravelMode(task.travelMode ?? "plane");
+    setSubtasks(task.subtasks ?? []);
   }, [task, visible]);
 
-  if (!task) return null;
-
   const handleSaveAndClose = () => {
+    if (!task) return;
+    const canSave = title.trim().length > 0;
+    if (!canSave) return;
+
     let estimatedMinutes = undefined;
     let finalStartTime = startTime.trim();
-    const startMinuteOfDay = getMinuteOfDay(finalStartTime);
     const now = new Date();
     const todayIso = getIsoDate(now);
-    const nowMinuteOfDay = now.getHours() * 60 + now.getMinutes();
     const finalDueDate = dueDate || todayIso;
-
-    if (finalDueDate < todayIso) {
-      Alert.alert(
-        "Invalid schedule",
-        "You cannot schedule a task in the past.",
-      );
-      return;
-    }
-
-    if (
-      finalDueDate === todayIso &&
-      startMinuteOfDay !== null &&
-      startMinuteOfDay < nowMinuteOfDay
-    ) {
-      Alert.alert(
-        "Invalid time",
-        "Start time must be now or later for today's schedule.",
-      );
-      return;
-    }
 
     if (startTime.trim() && endTime.trim()) {
       const [sh, sm] = startTime.trim().split(":").map(Number);
@@ -173,680 +299,557 @@ export function ScheduleTaskSheet({
       priority !== task.priority ||
       listId !== task.listId ||
       notes !== task.notes ||
-      emoji !== task.emoji ||
-      (taskType === "manual" && customType !== "")
+      fromLocation !== task.fromLocation ||
+      toLocation !== task.toLocation ||
+      travelMode !== (task as any).travelMode ||
+      JSON.stringify(subtasks) !== JSON.stringify(task.subtasks)
     ) {
       onUpdate(task.id, {
         title,
         dueDate: finalDueDate,
         dueTime: finalStartTime || undefined,
         estimatedMinutes,
-        taskType:
-          taskType === "manual" && customType ? (customType as any) : taskType,
+        taskType,
         priority,
         listId,
         notes,
-        emoji,
+        fromLocation,
+        toLocation,
+        travelMode: travelMode as any,
+        subtasks,
       });
     }
     onClose();
   };
 
-  const getCombinedDate = () => {
-    const d = dueDate ? new Date(dueDate) : new Date();
-    if (startTime) {
-      const [h, m] = startTime.split(":").map(Number);
-      if (!isNaN(h) && !isNaN(m)) {
-        d.setHours(h, m, 0, 0);
-      }
-    }
-    return d;
+  const handleAddSubtask = () => {
+    if (!newSubtask.trim()) return;
+    setSubtasks((prev) => [
+      ...prev,
+      { id: `sub-${Date.now()}`, title: newSubtask.trim(), completed: false },
+    ]);
+    setNewSubtask("");
   };
 
-  const updateCombinedDate = (date: Date) => {
-    setDueDate(getIsoDate(date));
-    setStartTime(
-      `${date.getHours().toString().padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`,
+  const handleToggleSubtask = (subId: string) => {
+    setSubtasks((prev) =>
+      prev.map((s) => (s.id === subId ? { ...s, completed: !s.completed } : s)),
     );
   };
 
-  const handleAddSubtask = () => {
-    if (!newSubtask.trim()) return;
-    onAddSubtask(task.id, {
-      title: newSubtask.trim(),
-      completed: false,
-    });
-    setNewSubtask("");
+  const handleDeleteSubtask = (subId: string) => {
+    setSubtasks((prev) => prev.filter((s) => s.id !== subId));
   };
+
+  const canSave = title.trim().length > 0;
+  const selectedPriorityColor =
+    priority === 1
+      ? "#FF4D6D"
+      : priority === 2
+        ? "#F59E0B"
+        : priority === 3
+          ? "#4CAF50"
+          : "#5BA4E5";
+  const isScheduleActive = showDatePicker || showStartPicker || showEndPicker;
+
+  const isExistingTask = Boolean(task?.title.trim());
+  const selectedPriorityMeta =
+    PRIORITY_OPTIONS.find((option) => option.value === priority) ??
+    PRIORITY_OPTIONS[2];
+  const selectedTaskTypeMeta =
+    TASK_TYPE_OPTIONS.find((option) => option.value === taskType) ??
+    TASK_TYPE_OPTIONS[0];
+  const estimatedDurationLabel = formatDuration(
+    getDurationBetween(startTime, endTime) ?? task?.estimatedMinutes,
+  );
+  const activeList = lists.find((list) => list.id === listId) ?? lists[0];
+
+  const handleDelete = () => {
+    if (!task) return;
+    deleteTask(task.id);
+    onClose();
+  };
+
+  const focusTitle = () => {
+    titleRef.current?.focus();
+  };
+
+  const handlePan = React.useMemo(
+    () =>
+      Gesture.Pan()
+        .onUpdate((e) => {
+          if (e.translationY > 0) {
+            sheetTranslateY.value = e.translationY;
+          }
+        })
+        .onEnd((e) => {
+          if (e.translationY > 100 || e.velocityY > 500) {
+            runOnJS(onClose)();
+          } else {
+            sheetTranslateY.value = withSpring(0, {
+              damping: 24,
+              stiffness: 200,
+              mass: 0.8,
+            });
+            if (e.translationY < -40) {
+              runOnJS(focusTitle)();
+            }
+          }
+        }),
+    [onClose],
+  );
+
+  const bgStyle = useAnimatedStyle(() => ({
+    opacity: bgOpacity.value,
+  }));
+
+  const sheetStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: sheetTranslateY.value }],
+  }));
+
+  const kbSpacerStyle = useAnimatedStyle(() => ({
+    height: kbHeight.value,
+  }));
+
+  if (!task) return null;
 
   // ── Render ────────────────────────────────────────────────────────
   return (
     <Modal
-      visible={visible}
+      visible={internalVisible}
       transparent
-      animationType="fade"
+      animationType="none"
       onRequestClose={onClose}
     >
-      <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-      </BlurView>
+      {/* Blurred backdrop */}
+      <Animated.View style={[StyleSheet.absoluteFill, bgStyle]}>
+        <BlurView intensity={10} tint="dark" style={StyleSheet.absoluteFill}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        </BlurView>
+      </Animated.View>
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.sheetContainer}
-        pointerEvents="box-none"
-      >
-        <LinearGradient
-          colors={[Colors.surfaceElevated, Colors.background]}
-          style={styles.sheetContent}
-        >
-          {/* Header */}
-          <View style={styles.header}>
+      {/* Centred card */}
+      <View style={styles.centreContainer} pointerEvents="box-none">
+        <Animated.View style={[styles.compactCard, sheetStyle]}>
+          <BlurView
+            intensity={32}
+            tint="dark"
+            style={StyleSheet.absoluteFill}
+            experimentalBlurMethod="dimezisBlurView"
+          />
+          {/* Priority-tinted stripes */}
+          <StripedBackground color={selectedPriorityColor} opacity={0.06} />
+
+          {/* ── Drag handle ─────────────────────────────── */}
+          <GestureDetector gesture={handlePan}>
+            <View style={styles.handleArea}>
+              <View style={styles.handle} />
+            </View>
+          </GestureDetector>
+
+          {/* ══ ROW 1 — Task name │ type chip │ priority chip ══ */}
+          <View style={styles.row1}>
+            {/* Task name input */}
             <TextInput
-              style={styles.emojiInput}
-              value={emoji}
-              onChangeText={setEmoji}
-              placeholder="📌"
-              placeholderTextColor={Colors.textMuted}
-              maxLength={2}
-            />
-            <TextInput
-              style={styles.titleInput}
+              ref={titleRef}
+              style={styles.compactTitleInput}
               value={title}
               onChangeText={setTitle}
-              placeholder="Task Title..."
-              placeholderTextColor={Colors.textMuted}
+              placeholder="Task name…"
+              placeholderTextColor="rgba(255,255,255,0.28)"
+              returnKeyType="done"
+              onSubmitEditing={handleSaveAndClose}
             />
-            <Pressable onPress={handleSaveAndClose} style={styles.closeBtn}>
-              <Check size={20} color={Colors.accent} />
-            </Pressable>
-          </View>
 
-          <ScrollView
-            style={styles.scrollArea}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={{ marginBottom: 24 }}>
-              {/* Priority */}
-              <Text style={styles.sectionLabel}>PRIORITY</Text>
-              <View style={{ marginBottom: 16 }}>
-                <PrioritySelector selected={priority} onSelect={setPriority} />
-              </View>
-
-              {/* Type */}
-              <Text style={styles.sectionLabel}>Type</Text>
-              <View style={styles.typeRow}>
-                {(["normal", "toGo", "project", "manual"] as TaskType[]).map(
-                  (t) => (
-                    <Pressable
-                      key={t}
-                      style={[
-                        styles.typeChip,
-                        taskType === t && styles.typeChipActive,
-                      ]}
-                      onPress={() => setTaskType(t)}
-                    >
-                      <Text
-                        style={[
-                          styles.typeChipText,
-                          taskType === t && styles.typeChipTextActive,
-                        ]}
-                      >
-                        {t === "normal"
-                          ? "Task"
-                          : t === "toGo"
-                            ? "To go"
-                            : t === "project"
-                              ? "Project"
-                              : "Manual"}
-                      </Text>
-                    </Pressable>
-                  ),
-                )}
-              </View>
-
-              {taskType === "manual" && (
-                <TextInput
-                  style={[styles.notesInput, { height: 48, marginBottom: 16 }]}
-                  value={customType}
-                  onChangeText={setCustomType}
-                  placeholder="Enter custom task type..."
-                  placeholderTextColor={Colors.textMuted}
-                />
-              )}
-
-              {/* Project */}
-              <Text style={styles.sectionLabel}>Projects</Text>
-              <View style={{ marginBottom: 16 }}>
-                <ProjectSelector
-                  lists={lists}
-                  selectedListId={listId}
-                  onSelect={setListId}
-                />
-              </View>
-
-              {/* Sketched DateTime Selectors */}
-              <View style={{ marginBottom: 24, marginTop: 8 }}>
-                <Pressable
-                  style={[
-                    styles.sketchedDateBtn,
-                    showDatePicker && styles.sketchedDateBtnActive,
-                  ]}
-                  onPress={() => {
-                    setShowDatePicker(!showDatePicker);
-                    setShowStartPicker(false);
-                    setShowEndPicker(false);
-                  }}
-                >
-                  <Calendar
-                    size={18}
-                    color={
-                      showDatePicker ? Colors.accent : Colors.textSecondary
-                    }
-                  />
-                  <View style={styles.sketchedDateTextCol}>
-                    <Text style={styles.sketchedDateLabel}>Select a day</Text>
-                    <Text style={styles.sketchedDateValue}>
-                      {dueDate
-                        ? dueDate.split("-").reverse().join(".")
-                        : "DD.MM.YYYY"}
-                    </Text>
-                  </View>
-                  {showDatePicker ? (
-                    <ChevronUp size={20} color={Colors.accent} />
-                  ) : (
-                    <ChevronDown size={20} color={Colors.textSecondary} />
-                  )}
-                </Pressable>
-
-                {showDatePicker && (
-                  <View style={styles.sketchedPickerWrapper}>
-                    <DateTimePicker
-                      value={getCombinedDate()}
-                      mode="date"
-                      display={Platform.OS === "ios" ? "inline" : "spinner"}
-                      textColor={Colors.textPrimary}
-                      themeVariant="dark"
-                      onChange={(event, selectedDate) => {
-                        if (Platform.OS === "android") setShowDatePicker(false);
-                        if (selectedDate) {
-                          setDueDate(getIsoDate(selectedDate));
-                        }
-                      }}
-                    />
-                  </View>
-                )}
-
-                <View style={styles.sketchedTimeRow}>
-                  <View style={{ flex: 1 }}>
-                    <Pressable
-                      style={[
-                        styles.sketchedDateBtn,
-                        showStartPicker && styles.sketchedDateBtnActive,
-                      ]}
-                      onPress={() => {
-                        setShowStartPicker(!showStartPicker);
-                        setShowDatePicker(false);
-                        setShowEndPicker(false);
-                      }}
-                    >
-                      <Clock
-                        size={16}
-                        color={
-                          showStartPicker ? Colors.accent : Colors.textSecondary
-                        }
-                      />
-                      <View style={styles.sketchedDateTextCol}>
-                        <Text style={styles.sketchedDateLabel}>Start with</Text>
-                        <Text style={styles.sketchedDateValue}>
-                          {startTime || "--:--"}
-                        </Text>
-                      </View>
-                      {showStartPicker ? (
-                        <ChevronUp size={18} color={Colors.accent} />
-                      ) : (
-                        <ChevronDown size={18} color={Colors.textSecondary} />
-                      )}
-                    </Pressable>
-                  </View>
-
-                  <View style={{ flex: 1 }}>
-                    <Pressable
-                      style={[
-                        styles.sketchedDateBtn,
-                        showEndPicker && styles.sketchedDateBtnActive,
-                      ]}
-                      onPress={() => {
-                        setShowEndPicker(!showEndPicker);
-                        setShowDatePicker(false);
-                        setShowStartPicker(false);
-                      }}
-                    >
-                      <Clock
-                        size={16}
-                        color={
-                          showEndPicker ? Colors.accent : Colors.textSecondary
-                        }
-                      />
-                      <View style={styles.sketchedDateTextCol}>
-                        <Text style={styles.sketchedDateLabel}>End with</Text>
-                        <Text style={styles.sketchedDateValue}>
-                          {endTime || "--:--"}
-                        </Text>
-                      </View>
-                      {showEndPicker ? (
-                        <ChevronUp size={18} color={Colors.accent} />
-                      ) : (
-                        <ChevronDown size={18} color={Colors.textSecondary} />
-                      )}
-                    </Pressable>
-                  </View>
-                </View>
-
-                {(showStartPicker || showEndPicker) && (
-                  <View
-                    style={[styles.sketchedPickerWrapper, { marginTop: -8 }]}
-                  >
-                    <DateTimePicker
-                      value={getCombinedDate()}
-                      mode="time"
-                      display="spinner"
-                      textColor={Colors.textPrimary}
-                      themeVariant="dark"
-                      onChange={(event, selectedDate) => {
-                        if (Platform.OS === "android") {
-                          showStartPicker
-                            ? setShowStartPicker(false)
-                            : setShowEndPicker(false);
-                        }
-                        if (selectedDate) {
-                          const timeStr = `${selectedDate.getHours().toString().padStart(2, "0")}:${selectedDate.getMinutes().toString().padStart(2, "0")}`;
-                          if (showStartPicker) setStartTime(timeStr);
-                          if (showEndPicker) setEndTime(timeStr);
-                        }
-                      }}
-                    />
-                  </View>
-                )}
-              </View>
-            </View>
-
-            {/* Subtasks */}
-            {(taskType === "withSubtask" || taskType === "normal") && (
-              <View style={{ marginBottom: 24 }}>
-                <Text style={styles.sectionLabel}>Subtask</Text>
-                {task.subtasks?.map((st) => (
-                  <View key={st.id} style={styles.subtaskRow}>
-                    <Pressable
-                      style={[
-                        styles.subtaskCheck,
-                        st.completed && styles.subtaskCheckDone,
-                      ]}
-                      onPress={() => onToggleSubtask(task.id, st.id)}
-                    >
-                      {st.completed && <Check size={14} color="#000" />}
-                    </Pressable>
-                    <Text
-                      style={[
-                        styles.subtaskTitle,
-                        st.completed && styles.subtaskTitleDone,
-                      ]}
-                    >
-                      {st.title}
-                    </Text>
-                    <Pressable
-                      style={styles.deleteSubBtn}
-                      onPress={() => onDeleteSubtask(task.id, st.id)}
-                    >
-                      <Trash2 size={16} color={Colors.error} />
-                    </Pressable>
-                  </View>
-                ))}
-
-                <View style={styles.addSubtaskRow}>
-                  <Plus size={18} color={Colors.textMuted} />
-                  <TextInput
-                    style={styles.addSubtaskInput}
-                    value={newSubtask}
-                    onChangeText={setNewSubtask}
-                    placeholder="Add subtask..."
-                    placeholderTextColor={Colors.textMuted}
-                    onSubmitEditing={handleAddSubtask}
-                    returnKeyType="done"
-                  />
-                  {newSubtask.trim().length > 0 && (
-                    <Pressable
-                      style={styles.addSubtaskBtn}
-                      onPress={handleAddSubtask}
-                    >
-                      <Text style={styles.addSubtaskBtnText}>Add</Text>
-                    </Pressable>
-                  )}
-                </View>
-              </View>
-            )}
-
-            {/* Notes */}
-            <Text style={styles.sectionLabel}>Notes -</Text>
-            <TextInput
-              style={styles.notesInput}
-              value={notes}
-              onChangeText={setNotes}
-              placeholder="Text area for Note of task"
-              placeholderTextColor={Colors.textMuted}
-              multiline
-              textAlignVertical="top"
-            />
-          </ScrollView>
-
-          {/* Action Footer */}
-          <View style={styles.footer}>
-            <Pressable
-              style={styles.aiBtn}
-              onPress={() => onLaunchAI && onLaunchAI(task)}
-            >
-              <Text style={styles.aiBtnText}>✦ Ask AI</Text>
-            </Pressable>
-
+            {/* Type chip — tap to cycle */}
             <Pressable
               style={[
-                styles.completeBtn,
-                task.status === "done" && styles.completeBtnDone,
+                styles.metaChip,
+                {
+                  backgroundColor: `${selectedPriorityColor}18`,
+                  borderColor: `${selectedPriorityColor}45`,
+                },
               ]}
               onPress={() => {
-                onUpdate(task.id, {
-                  status: task.status === "done" ? "todo" : "done",
-                });
-                onClose();
+                const idx = TASK_TYPE_OPTIONS.findIndex(
+                  (o) => o.value === taskType,
+                );
+                setTaskType(
+                  TASK_TYPE_OPTIONS[(idx + 1) % TASK_TYPE_OPTIONS.length].value,
+                );
               }}
             >
-              <Text style={styles.completeBtnText}>
-                {task.status === "done" ? "Mark Pending" : "Complete Task"}
+              {taskType === "normal" && (
+                <Check
+                  size={14}
+                  color={selectedPriorityColor}
+                  strokeWidth={3}
+                />
+              )}
+              {taskType === "project" && (
+                <Briefcase size={14} color={selectedPriorityColor} />
+              )}
+              {taskType === "toGo" && (
+                <Navigation size={14} color={selectedPriorityColor} />
+              )}
+              <Text
+                style={[styles.metaChipText, { color: selectedPriorityColor }]}
+              >
+                {selectedTaskTypeMeta.label}
+              </Text>
+            </Pressable>
+
+            {/* Priority chip — tap to cycle */}
+            <Pressable
+              style={[
+                styles.metaChip,
+                {
+                  backgroundColor: `${selectedPriorityColor}18`,
+                  borderColor: `${selectedPriorityColor}45`,
+                },
+              ]}
+              onPress={() => {
+                const idx = PRIORITY_OPTIONS.findIndex(
+                  (o) => o.value === priority,
+                );
+                setPriority(
+                  PRIORITY_OPTIONS[(idx + 1) % PRIORITY_OPTIONS.length].value,
+                );
+              }}
+            >
+              {selectedPriorityMeta.icon}
+              <Text
+                style={[styles.metaChipText, { color: selectedPriorityColor }]}
+              >
+                {selectedPriorityMeta.label}
               </Text>
             </Pressable>
           </View>
-        </LinearGradient>
-      </KeyboardAvoidingView>
+
+          {/* Thin separator */}
+          <View
+            style={[
+              styles.chipDivider,
+              { backgroundColor: `${selectedPriorityColor}22` },
+            ]}
+          />
+
+          {/* ══ ROW 2 — Date ══════════════════════════════════════ */}
+          <Pressable
+            style={styles.row2}
+            onPress={() => {
+              setShowDatePicker(!showDatePicker);
+              setShowStartPicker(false);
+              setShowEndPicker(false);
+            }}
+          >
+            <View
+              style={[
+                styles.rowIconBg,
+                { backgroundColor: `${selectedPriorityColor}15` },
+              ]}
+            >
+              <Calendar size={14} color={selectedPriorityColor} />
+            </View>
+            <Text
+              style={[
+                styles.rowText,
+                showDatePicker && { color: selectedPriorityColor },
+              ]}
+            >
+              {formatDisplayDate(dueDate)}
+            </Text>
+            {showDatePicker ? (
+              <ChevronUp size={16} color={selectedPriorityColor} />
+            ) : (
+              <ChevronDown size={16} color="rgba(255,255,255,0.3)" />
+            )}
+          </Pressable>
+
+          {showDatePicker && (
+            <View style={styles.pickerWrapper}>
+              <InlineDatePicker
+                dateIso={dueDate}
+                onChange={setDueDate}
+                accentColor={selectedPriorityColor}
+              />
+            </View>
+          )}
+
+          {/* ══ ROW 3 — Start / End time ══════════════════════════ */}
+          <View
+            style={[
+              styles.chipDivider,
+              { backgroundColor: "rgba(255,255,255,0.06)" },
+            ]}
+          />
+          <View style={styles.row3}>
+            {/* Start time */}
+            <Pressable
+              style={styles.timeHalf}
+              onPress={() => {
+                setShowStartPicker(!showStartPicker);
+                setShowDatePicker(false);
+                setShowEndPicker(false);
+              }}
+            >
+              <Clock
+                size={14}
+                color={
+                  showStartPicker
+                    ? selectedPriorityColor
+                    : "rgba(255,255,255,0.35)"
+                }
+              />
+              <Text
+                style={[
+                  styles.rowText,
+                  showStartPicker && { color: selectedPriorityColor },
+                ]}
+              >
+                {startTime || "--:--"}
+              </Text>
+            </Pressable>
+
+            <View style={styles.timeSeparator} />
+
+            {/* End time */}
+            <Pressable
+              style={styles.timeHalf}
+              onPress={() => {
+                setShowEndPicker(!showEndPicker);
+                setShowDatePicker(false);
+                setShowStartPicker(false);
+              }}
+            >
+              <Clock
+                size={14}
+                color={
+                  showEndPicker
+                    ? selectedPriorityColor
+                    : "rgba(255,255,255,0.35)"
+                }
+              />
+              <Text
+                style={[
+                  styles.rowText,
+                  showEndPicker && { color: selectedPriorityColor },
+                ]}
+              >
+                {endTime || "--:--"}
+              </Text>
+            </Pressable>
+          </View>
+
+          {(showStartPicker || showEndPicker) && (
+            <View style={styles.pickerWrapper}>
+              <InlineTimePicker
+                key={showEndPicker ? "end" : "start"}
+                time={showEndPicker ? endTime : startTime}
+                accentColor={selectedPriorityColor}
+                onChange={(val) => {
+                  if (showStartPicker) setStartTime(val);
+                  if (showEndPicker) setEndTime(val);
+                }}
+              />
+            </View>
+          )}
+
+          {/* ══ Bottom action row ═══════════════════════════════ */}
+          <View style={styles.bottomRow}>
+            {/* Duration badge */}
+            <View style={styles.durationBadge}>
+              <Clock size={11} color="rgba(255,255,255,0.35)" />
+              <Text style={styles.durationText}>{estimatedDurationLabel}</Text>
+            </View>
+
+            <View style={{ flex: 1 }} />
+
+            {/* Delete (existing tasks only) */}
+            {isExistingTask && (
+              <Pressable onPress={handleDelete} style={styles.actionBtn}>
+                <Trash2 size={20} color="#FF4D6D" />
+              </Pressable>
+            )}
+
+            {/* Close */}
+            <Pressable onPress={onClose} style={styles.actionBtn}>
+              <X size={22} color="rgba(255,255,255,0.55)" />
+            </Pressable>
+
+            {/* Save / confirm */}
+            <Pressable
+              onPress={handleSaveAndClose}
+              disabled={!canSave}
+              style={styles.actionBtn}
+            >
+              <Check
+                size={22}
+                color={
+                  canSave ? selectedPriorityColor : "rgba(255,255,255,0.25)"
+                }
+                strokeWidth={3}
+              />
+            </Pressable>
+          </View>
+
+          <Animated.View style={kbSpacerStyle} pointerEvents="none" />
+        </Animated.View>
+      </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  sheetContainer: {
+  /* ── Centred overlay container ─────────────────────────────────── */
+  centreContainer: {
     flex: 1,
     justifyContent: "flex-end",
+    paddingHorizontal: 12,
+    paddingBottom: 20,
   },
-  sheetContent: {
-    maxHeight: "85%",
-    minHeight: 300,
-    borderTopLeftRadius: Radius.xl,
-    borderTopRightRadius: Radius.xl,
-    padding: 24,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderColor: Colors.surfaceBorder,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -10 },
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
-    elevation: 20,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 16,
-  },
-  titleInput: {
-    flex: 1,
-    fontSize: 22,
-    fontWeight: "bold",
-    color: Colors.textPrimary,
-    marginRight: 16,
-    padding: 0,
-  },
-  emojiInput: {
-    fontSize: 22,
-    marginRight: 10,
-    width: 32,
-    textAlign: "center",
-  },
-  closeBtn: {
-    padding: 4,
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderRadius: 12,
-  },
-  timeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 24,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.05)",
-  },
-  timeText: {
-    fontSize: 14,
-    color: Colors.accent,
-    fontWeight: "500",
-  },
-  timeBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.03)", // Subtle exoplan flat button depth
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: Radius.full, // pill
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  timeLabel: {
-    fontSize: 12,
-    fontWeight: "500",
-    color: Colors.textSecondary,
-    marginRight: 6,
-  },
-  timeInput: {
-    fontSize: 14,
-    color: Colors.textPrimary,
-    fontWeight: "bold",
-    minWidth: 42,
-    textAlign: "center",
-  },
-  scrollArea: {
-    maxHeight: "100%", // Let it flex naturally within the sheet
-  },
-  sectionLabel: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: Colors.textSecondary,
-    marginBottom: 12,
-    marginBottom: 12,
-    textTransform: "uppercase",
-  },
-  typeRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginBottom: 20,
-  },
-  typeChip: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: Radius.full,
-    backgroundColor: "rgba(255,255,255,0.04)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    alignItems: "center",
-  },
-  typeChipActive: {
-    backgroundColor: "rgba(168,85,247,0.15)",
-    borderColor: Colors.accent,
-  },
-  typeChipText: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    fontWeight: "600",
-  },
-  typeChipTextActive: {
-    color: Colors.accent,
-  },
-  sketchedDateBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "transparent",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-    borderRadius: Radius.md,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 10,
-    marginBottom: Spacing.sm,
-  },
-  sketchedDateBtnActive: {
-    borderColor: Colors.accent,
-    backgroundColor: "rgba(168,85,247,0.05)",
-  },
-  sketchedDateTextCol: {
-    flex: 1,
-    marginLeft: Spacing.sm,
-  },
-  sketchedDateLabel: {
-    fontSize: 10,
-    color: Colors.textSecondary,
-    fontWeight: "500",
-  },
-  sketchedDateValue: {
-    fontSize: 14,
-    color: Colors.textPrimary,
-    fontWeight: "bold",
-    marginTop: 2,
-  },
-  sketchedPickerWrapper: {
-    backgroundColor: "rgba(255,255,255,0.02)",
-    borderRadius: Radius.lg,
-    padding: Spacing.sm,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
-    marginBottom: 16,
+
+  /* ── The single compact card ──────────────────────────────────── */
+  compactCard: {
+    width: "100%",
+    borderRadius: 26,
+    borderWidth: 1.2,
+    borderColor: "rgba(255,255,255,0.09)",
+    backgroundColor: "rgba(8,12,20,0.88)",
     overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.5,
+    shadowRadius: 28,
+    elevation: 22,
   },
-  sketchedTimeRow: {
-    flexDirection: "row",
-    gap: Spacing.sm,
+
+  /* ── Drag handle ───────────────────────────────────────────────── */
+  handleArea: {
+    width: "100%",
+    paddingTop: 8,
+    paddingBottom: 6,
+    alignItems: "center",
   },
-  notesInput: {
-    backgroundColor: "rgba(255,255,255,0.03)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    borderRadius: Radius.md,
-    color: Colors.textPrimary,
-    padding: 16,
-    height: 100,
-    fontSize: 14,
-    marginBottom: 20,
+  handle: {
+    width: 38,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.16)",
   },
-  subtaskRow: {
+
+  /* ── Row 1: name input + chips ─────────────────────────────────── */
+  row1: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.03)",
-    padding: 12,
-    borderRadius: Radius.md,
-    marginBottom: 8,
+    paddingHorizontal: 14,
+    paddingTop: 4,
+    paddingBottom: 12,
+    gap: 8,
   },
-  subtaskCheck: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: Colors.textMuted,
-    marginRight: 12,
+  compactTitleInput: {
+    flex: 1,
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#fff",
+    padding: 0,
+    letterSpacing: -0.2,
+  },
+  metaChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  metaChipText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#fff",
+  },
+
+  /* ── Divider/Separator ─────────────────────────────────────────── */
+  chipDivider: {
+    height: 1,
+    marginHorizontal: 14,
+  },
+
+  /* ── Row 2: date ───────────────────────────────────────────────── */
+  row2: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    gap: 10,
+  },
+  rowIconBg: {
+    width: 28,
+    height: 28,
+    borderRadius: 9,
     alignItems: "center",
     justifyContent: "center",
   },
-  subtaskCheckDone: {
-    backgroundColor: Colors.accent,
-    borderColor: Colors.accent,
-  },
-  subtaskTitle: {
+  rowText: {
     flex: 1,
-    fontSize: 14,
-    color: Colors.textPrimary,
-  },
-  subtaskTitleDone: {
-    textDecorationLine: "line-through",
-    color: Colors.textMuted,
-  },
-  deleteSubBtn: {
-    padding: 4,
-  },
-  addSubtaskRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.2)",
-    padding: 12,
-    borderRadius: Radius.md,
-    marginTop: 4,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.05)",
-  },
-  addSubtaskInput: {
-    flex: 1,
-    fontSize: 14,
-    color: Colors.textPrimary,
-    marginLeft: 12,
-    padding: 0,
-  },
-  addSubtaskBtn: {
-    backgroundColor: Colors.accent,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: Radius.sm,
-  },
-  addSubtaskBtnText: {
-    color: "#000",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  footer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 16,
-    gap: 12,
-  },
-  aiBtn: {
-    flex: 1,
-    backgroundColor: "rgba(168,85,247,0.15)",
-    borderWidth: 1,
-    borderColor: "rgba(168,85,247,0.3)",
-    paddingVertical: 14,
-    borderRadius: Radius.md,
-    alignItems: "center",
-  },
-  aiBtnText: {
-    color: "#E9D5FF",
     fontSize: 14,
     fontWeight: "600",
+    color: "rgba(255,255,255,0.85)",
   },
-  completeBtn: {
-    flex: 2,
-    backgroundColor: Colors.accent,
-    paddingVertical: 14,
-    borderRadius: Radius.md,
+
+  /* ── Row 3: time ───────────────────────────────────────────────── */
+  row3: {
+    flexDirection: "row",
     alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 13,
   },
-  completeBtnDone: {
-    backgroundColor: "rgba(255,255,255,0.1)",
+  timeHalf: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
-  completeBtnText: {
-    color: "#000",
-    fontSize: 15,
-    fontWeight: "bold",
+  timeSeparator: {
+    width: 1,
+    height: 18,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    marginHorizontal: 6,
+  },
+
+  /* ── Inline picker ─────────────────────────────────────────────── */
+  pickerWrapper: {
+    borderTopWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    paddingVertical: 8,
+  },
+
+  /* ── Bottom action row ─────────────────────────────────────────── */
+  bottomRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 14,
+    gap: 8,
+    borderTopWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+  },
+  durationBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  durationText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "rgba(255,255,255,0.35)",
+  },
+  actionBtn: {
+    width: 38,
+    height: 38,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

@@ -196,13 +196,13 @@ const HabitCardItem = ({
           styles.habitCard,
           {
             borderColor: isCompleted
-              ? `${habit.color}30`
-              : "rgba(255,255,255,0.04)",
+              ? `${habit.color}50`
+              : "rgba(255,255,255,0.1)",
           },
         ]}
         onPress={onToggleExpand}
       >
-        <StripedBackground opacity={0.04} />
+        <StripedBackground opacity={0.12} />
 
         {/* Color accent bar */}
         <View
@@ -375,11 +375,26 @@ export default function HabitsScreen() {
         end={[0.5, 1]}
       />
 
+      {/* ── Top Foreground Mask for Smooth Scroll Fade ── */}
+      <LinearGradient
+        colors={["#291807", "#291807", "#29180700"]}
+        locations={[0, 0.7, 1]}
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: headerHeight + 20,
+          zIndex: 5,
+        }}
+        pointerEvents="none"
+      />
+
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.content,
-          { paddingTop: headerHeight, paddingBottom: 100 },
+          { paddingTop: headerHeight + 20, paddingBottom: 100 },
         ]}
       >
         {/* ── Stats Row ────────────────────────────────────────────────── */}
@@ -495,7 +510,7 @@ export default function HabitsScreen() {
                   style={styles.presetCard}
                   onPress={() => addPresetHabit(p)}
                 >
-                  <StripedBackground opacity={0.04} />
+                  <StripedBackground opacity={0.15} />
                   <View style={{ marginBottom: 6 }}>
                     {renderHabitIcon(p.icon, 24, p.color)}
                   </View>

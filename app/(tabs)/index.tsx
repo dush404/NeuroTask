@@ -2,38 +2,36 @@
 // Static UI recreation matching reference image down to the pixel
 
 import { LinearGradient } from "expo-linear-gradient";
+import { router } from "expo-router";
 import {
-    Activity,
-    Briefcase,
-    Coffee,
-    Dumbbell as DumbbellIcon,
-    HeartPulse,
-    ListTodo,
-    Plus,
-    Sparkles,
-    Utensils,
+  Activity,
+  Briefcase,
+  Coffee,
+  Dumbbell as DumbbellIcon,
+  HeartPulse,
+  ListTodo,
+  Plus,
+  Sparkles,
+  Utensils,
 } from "lucide-react-native";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import {
-    Gesture,
-    GestureDetector,
-    ScrollView,
+  Gesture,
+  GestureDetector,
+  ScrollView,
 } from "react-native-gesture-handler";
-import { useDerivedValue, useSharedValue } from "react-native-reanimated";
+import { useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Path } from "react-native-svg";
 
 // PageHeader is now rendered in (tabs)/_layout.tsx for persistence
 import { ScheduleTaskSheet } from "../../src/components/ScheduleTaskSheet";
-import {
-    CardVariant,
-    TimelineBlock,
-    TimelineTask,
-} from "../../src/components/TimelineBlock";
+import { TimelineBlock } from "../../src/components/TimelineBlock";
 import { useTaskStore } from "../../src/store/useTaskStore";
 import { indexStyles as styles } from "../../src/styles/index.styles";
 import { Task } from "../../src/types/task";
+import { CardVariant, TimelineTask } from "../../src/types/timeline";
 
 // ── Icons ──────────────────────────────────────────────────────────────────────
 
@@ -280,30 +278,6 @@ export default function DashboardExact() {
   const headerHeight = Math.max(insets.top, 20) + 60;
 
   const scrollRef = useRef<any>(null);
-  const baseScale = useSharedValue(1);
-  const pinchScale = useSharedValue(1);
-
-  const MAX_SCALE = 100 / 50; // Enforces a maximum card size of exactly 100px for standard 54px blocks
-
-  const zoomScale = useDerivedValue(() => {
-    return Math.max(
-      0.1,
-      Math.min(MAX_SCALE, baseScale.value * pinchScale.value),
-    );
-  });
-
-  const pinchGesture = Gesture.Pinch()
-    .simultaneousWithExternalGesture(scrollRef)
-    .onUpdate((e) => {
-      pinchScale.value = e.scale;
-    })
-    .onEnd(() => {
-      baseScale.value = Math.max(
-        0.1,
-        Math.min(MAX_SCALE, baseScale.value * pinchScale.value),
-      );
-      pinchScale.value = 1;
-    });
 
   const {
     tasks,
@@ -316,6 +290,25 @@ export default function DashboardExact() {
   } = useTaskStore();
 
   const [sheetTask, setSheetTask] = useState<Task | null>(null);
+
+  // ── Pinch-to-Zoom: shared animated scale value ──
+  const zoomScale = useSharedValue(1);
+  const savedZoomScale = useSharedValue(1);
+
+  const pinchGesture = React.useMemo(
+    () =>
+      Gesture.Pinch()
+        .onUpdate((e) => {
+          zoomScale.value = Math.max(
+            0.3,
+            Math.min(3, savedZoomScale.value * e.scale),
+          );
+        })
+        .onEnd(() => {
+          savedZoomScale.value = zoomScale.value;
+        }),
+    [savedZoomScale, zoomScale],
+  );
 
   // ── Live clock: auto-updates every minute so the red line moves ──
   const [nowMinutes, setNowMinutes] = useState(() => {
@@ -385,20 +378,108 @@ export default function DashboardExact() {
 
   const isScheduleToday = scheduleDate === getIsoDate(new Date());
 
+  // ── Overlap Detection Helper ──────────────────────────────────────────────
+  // Given a sorted list of {start, end, id}, assigns each to the first
+  // available column where it doesn't collide, then sets totalOverlaps.
+  type TaskRange = { id: string; start: number; end: number; col: number };
+
+  function assignOverlapColumns(ranges: TaskRange[]): void {
+    // columns[i] = end minute of the latest task in column i
+    const columns: number[] = [];
+    for (const r of ranges) {
+      let placed = false;
+      for (let c = 0; c < columns.length; c++) {
+        if (r.start >= columns[c]) {
+          columns[c] = r.end;
+          r.col = c;
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        r.col = columns.length;
+        columns.push(r.end);
+      }
+    }
+    // Now set totalOverlaps on each range by looking at its overlap group
+    const totalCols = columns.length;
+    for (const r of ranges) {
+      // Find all ranges that overlap with this one
+      const overlapping = ranges.filter(
+        (other) => other.start < r.end && other.end > r.start,
+      );
+      const maxCol = Math.max(...overlapping.map((o) => o.col)) + 1;
+      // We'll store the group-local max, not the global max
+      (r as any)._totalOverlaps = Math.max(maxCol, 1);
+    }
+  }
+
   const timelineTasks: TimelineTask[] = useMemo(() => {
     const mixedTasks: TimelineTask[] = [];
     const tasksByHour = new Map<number, Task[]>();
     const currentHour = Math.floor(nowMinutes / 60);
     const currentMinute = nowMinutes % 60;
 
+    // ── 1. Build task ranges for overlap detection ──
+    const taskRanges: TaskRange[] = [];
     todaysTasks.forEach((task) => {
       const startMinute = getMinuteOfDay(task.dueTime);
       if (startMinute === null) return;
+      const duration = task.estimatedMinutes || 30;
+      const endMinute = startMinute + duration;
+      taskRanges.push({
+        id: task.id,
+        start: startMinute,
+        end: endMinute,
+        col: 0,
+      });
 
       const hour = Math.floor(startMinute / 60);
       if (!tasksByHour.has(hour)) tasksByHour.set(hour, []);
       tasksByHour.get(hour)!.push(task);
     });
+    // Sort by start time, then by duration (longer first for better packing)
+    taskRanges.sort(
+      (a, b) => a.start - b.start || b.end - b.start - (a.end - a.start),
+    );
+    assignOverlapColumns(taskRanges);
+
+    // Build a lookup map: taskId -> { overlapIndex, totalOverlaps }
+    const overlapMap = new Map<
+      string,
+      { overlapIndex: number; totalOverlaps: number }
+    >();
+    for (const r of taskRanges) {
+      overlapMap.set(r.id, {
+        overlapIndex: r.col,
+        totalOverlaps: (r as any)._totalOverlaps || 1,
+      });
+    }
+
+    // ── 2. Find the next upcoming task for "time until" badge ──
+    let nextTaskLabel: string | undefined;
+    if (isScheduleToday) {
+      const upcomingRanges = taskRanges.filter((r) => r.start > nowMinutes);
+      if (upcomingRanges.length > 0) {
+        const nextRange = upcomingRanges[0]; // already sorted
+        const nextTask = todaysTasks.find((t) => t.id === nextRange.id);
+        const minsUntil = nextRange.start - nowMinutes;
+        if (nextTask && minsUntil <= 120) {
+          // Only show badge if within 2 hours
+          if (minsUntil < 60) {
+            nextTaskLabel = `${minsUntil}m until ${nextTask.title || "next task"}`;
+          } else {
+            const hrs = Math.floor(minsUntil / 60);
+            const mins = minsUntil % 60;
+            nextTaskLabel = `${hrs}h${mins > 0 ? ` ${mins}m` : ""} until ${nextTask.title || "next task"}`;
+          }
+        }
+      }
+    }
+
+    // ── 3. Build the timeline slots ──
+    // We'll also track the last task's end minute for gap detection
+    let lastTaskEndMinute: number | null = null;
 
     for (let hour = 0; hour < 24; hour++) {
       const tasksInHour = (tasksByHour.get(hour) || []).sort((a, b) =>
@@ -446,6 +527,11 @@ export default function DashboardExact() {
             (!firstTaskMinute || currentMinute < firstTaskMinute)
               ? currentMinute
               : undefined,
+          // Attach "next task" label to current hour empty block
+          nextTaskLabel:
+            isScheduleToday && hour === currentHour && !hostTask
+              ? nextTaskLabel
+              : undefined,
         });
       }
 
@@ -458,22 +544,57 @@ export default function DashboardExact() {
           taskHour === 0 ? 12 : taskHour > 12 ? taskHour - 12 : taskHour;
         const minuteLabel = String(minuteInHour).padStart(2, "0");
         const isCurrentHost = hostTask?.id === task.id;
+        const duration = task.estimatedMinutes || 30;
+        const endMinute = startMinute + duration;
 
-        mixedTasks.push({
+        // ── Smart Gap Detection ──
+        // Insert a gap slot if there's a > 60 minute gap before this task
+        if (
+          lastTaskEndMinute !== null &&
+          startMinute - lastTaskEndMinute > 60
+        ) {
+          const gapStart = lastTaskEndMinute;
+          const gapEnd = startMinute;
+          const gapDuration = gapEnd - gapStart;
+          const gapHour = Math.floor(gapStart / 60);
+          const gapAmpm = gapHour < 12 ? "AM" : "PM";
+          const gapHourLabel =
+            gapHour === 0 ? 12 : gapHour > 12 ? gapHour - 12 : gapHour;
+          const gapMinLabel = String(gapStart % 60).padStart(2, "0");
+
+          mixedTasks.push({
+            id: `gap-${gapStart}-${gapEnd}`,
+            title: `${Math.floor(gapDuration / 60)}h ${gapDuration % 60}m free`,
+            timeStr:
+              gapMinLabel === "00"
+                ? `${gapHourLabel} ${gapAmpm}`
+                : `${gapHourLabel}:${gapMinLabel} ${gapAmpm}`,
+            status: "todo",
+            isGapSlot: true,
+            gapStartMinute: gapStart,
+            gapEndMinute: gapEnd,
+            lineStyle: "straight-muted",
+            nodeState: "none",
+          });
+        }
+
+        // ── Overlap data ──
+        const overlap = overlapMap.get(task.id);
+
+        // ── isPast detection ──
+        const isPastTask = isScheduleToday && endMinute <= nowMinutes;
+
+        const slot: TimelineTask = {
           id: task.id,
           title: task.title,
-          subtitle:
-            task.notes ||
-            (task.taskType === "toGo" && task.toLocation
-              ? `To: ${task.toLocation}`
-              : undefined),
+          subtitle: task.notes,
           timeStr:
             minuteLabel === "00"
               ? `${hourLabel} ${ampm}`
               : `${hourLabel}:${minuteLabel} ${ampm}`,
           status: task.status === "done" ? "done" : "todo",
           variant: getVariantForCategory(task.listId),
-          durationMinutes: task.estimatedMinutes || 30,
+          durationMinutes: duration,
           leftCategoryIcon: getIconForCategory(task.listId),
           lineStyle:
             task.status === "done" ? "straight-active" : "straight-muted",
@@ -500,7 +621,35 @@ export default function DashboardExact() {
                 })()
               : undefined,
           subtasks: task.subtasks,
-        });
+          taskType: task.taskType,
+          fromLocation: task.fromLocation,
+          toLocation: task.toLocation,
+          startDateStr: task.dueDate
+            ? new Date(task.dueDate)
+                .toLocaleDateString("en-US", {
+                  day: "numeric",
+                  month: "short",
+                  year: "numeric",
+                })
+                .replace(",", "")
+            : "22 Feb 2026",
+          travelMode: (task as any).travelMode || "plane",
+
+          // ── NEW properties ──
+          overlapIndex: overlap?.overlapIndex,
+          totalOverlaps: overlap?.totalOverlaps,
+          isPast: isPastTask,
+          startMinuteOfDay: startMinute,
+          // Attach "next task" label to the current host task
+          nextTaskLabel: isCurrentHost ? nextTaskLabel : undefined,
+        };
+
+        mixedTasks.push(slot);
+
+        // Track last end minute for gap detection
+        if (lastTaskEndMinute === null || endMinute > lastTaskEndMinute) {
+          lastTaskEndMinute = endMinute;
+        }
 
         if (
           isScheduleToday &&
@@ -516,19 +665,61 @@ export default function DashboardExact() {
     }
 
     if (mixedTasks.length > 0) {
-      mixedTasks[mixedTasks.length - 1].lineStyle = "fade-out";
+      mixedTasks[mixedTasks.length - 1].lineStyle = "straight-muted";
     }
+
+    // ── End of Day Marker (11:59 PM) ──
+    mixedTasks.push({
+      id: "end-of-day-node",
+      title: "",
+      timeStr: "", // Hidden time value
+      status: "todo",
+      isEmptyHour: true,
+      lineStyle: "none", // Prevent line continuing downwards
+      nodeState: "muted",
+      isEndOfDay: true,
+      endOfDayQuote: "“Tomorrow is a new canvas.”",
+      startMinuteOfDay: 1439,
+    });
 
     return mixedTasks;
   }, [todaysTasks, isScheduleToday, nowMinutes]);
 
+  // ── AI Gap Fill placeholder ──
+  const handleAIFillGap = React.useCallback(
+    (startMinute: number, endMinute: number) => {
+      console.log(`🤖 Shyra: Fill gap from ${startMinute} to ${endMinute}`);
+      // TODO: Connect to Shyra AI to suggest tasks for this time slot
+    },
+    [],
+  );
+
   // Swipe completion handler
-  const handleSwipeComplete = (id: string) => {
-    const task = tasks.find((t) => t.id === id);
-    if (task) {
-      updateTask(id, { status: task.status === "done" ? "todo" : "done" });
-    }
-  };
+  const handleSwipeComplete = React.useCallback(
+    (id: string) => {
+      const task = tasks.find((t) => t.id === id);
+      if (task) {
+        updateTask(id, { status: task.status === "done" ? "todo" : "done" });
+      }
+    },
+    [tasks, updateTask],
+  );
+
+  // Drag-and-drop reschedule handler
+  const handleReschedule = React.useCallback(
+    (taskId: string, newDueTime: string) => {
+      updateTask(taskId, { dueTime: newDueTime });
+    },
+    [updateTask],
+  );
+
+  // Duration handle change handler
+  const handleDurationChange = React.useCallback(
+    (taskId: string, newMinutes: number) => {
+      updateTask(taskId, { estimatedMinutes: newMinutes });
+    },
+    [updateTask],
+  );
 
   const handleOpenSheet = (id: string) => {
     const t = tasks.find((t) => t.id === id);
@@ -559,11 +750,19 @@ export default function DashboardExact() {
         />
       </View>
 
-      <View
-        style={[
-          styles.headerArea,
-          { paddingTop: headerHeight, paddingBottom: 10 },
-        ]}
+      {/* ── Top Foreground Mask for Smooth Scroll Fade ── */}
+      <LinearGradient
+        colors={["#0D1B2A", "#0D1B2A", "#0D1B2A00"]}
+        locations={[0, 0.7, 1]}
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: headerHeight + 20,
+          zIndex: 5,
+        }}
+        pointerEvents="none"
       />
 
       {/* ── Timeline ─────────────────────────────────────────────────── */}
@@ -571,7 +770,10 @@ export default function DashboardExact() {
         <ScrollView
           ref={scrollRef}
           style={styles.timelineScroll}
-          contentContainerStyle={styles.timelineContent}
+          contentContainerStyle={[
+            styles.timelineContent,
+            { paddingTop: headerHeight + 20 },
+          ]}
           showsVerticalScrollIndicator={false}
         >
           {timelineTasks.length === 0 ? (
@@ -587,17 +789,24 @@ export default function DashboardExact() {
                 task={slot}
                 onPress={() => handleOpenSheet(slot.id)}
                 onSwipeComplete={handleSwipeComplete}
+                onAIFillGap={handleAIFillGap}
+                onReschedule={handleReschedule}
+                onDurationChange={handleDurationChange}
                 zoomScale={zoomScale}
               />
             ))
           )}
-          <View style={{ height: 160 }} />
+          <View style={{ height: 80 }} />
         </ScrollView>
       </GestureDetector>
 
       {/* ── Floating Action Buttons (FABs) ───────────────────────────── */}
       <View style={styles.fabContainer}>
-        <TouchableOpacity style={styles.fabAI} activeOpacity={0.85}>
+        <TouchableOpacity
+          style={styles.fabAI}
+          activeOpacity={0.85}
+          onPress={() => router.push("/ai-chat")}
+        >
           <View style={styles.fabAIGlow} />
           <View style={styles.fabAIInner}>
             <Sparkles size={20} color="#E9D5FF" />

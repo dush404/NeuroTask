@@ -57,6 +57,7 @@ export interface Task {
   energyType?: EnergyType;
   assigneeId?: string; // collaboration-ready
   comments: TaskComment[];
+  travelMode?: "plane" | "train" | "bus" | "car" | "bike";
   sortOrder: number; // for drag-reorder
 }
 

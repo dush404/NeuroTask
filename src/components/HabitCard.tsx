@@ -5,9 +5,9 @@ import { Check, Flame } from "lucide-react-native";
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, {
-    useAnimatedStyle,
-    useSharedValue,
-    withSpring,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
 } from "react-native-reanimated";
 import { Colors, Radius, Spacing, Typography } from "../constants/theme";
 import { useHabitStore } from "../store/useHabitStore";

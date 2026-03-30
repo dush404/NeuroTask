@@ -1,5 +1,5 @@
 import React from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Colors, Radius, Spacing } from "../constants/theme";
 import { Priority } from "../types/task";
 
@@ -9,10 +9,10 @@ interface PrioritySelectorProps {
 }
 
 const PRIORITY_OPTIONS: { value: Priority; label: string; color: string }[] = [
-  { value: 1, label: "High", color: Colors.priorityHigh },
-  { value: 2, label: "Medium", color: Colors.priorityMedium },
-  { value: 3, label: "Low", color: Colors.priorityLow },
-  { value: 4, label: "None", color: Colors.textMuted },
+  { value: 1, label: "Urgent", color: Colors.priorityHigh },
+  { value: 2, label: "High", color: Colors.priorityMedium },
+  { value: 3, label: "Medium", color: Colors.priorityLow },
+  { value: 4, label: "Low", color: Colors.textMuted },
 ];
 
 export const PrioritySelector: React.FC<PrioritySelectorProps> = ({
@@ -20,59 +20,67 @@ export const PrioritySelector: React.FC<PrioritySelectorProps> = ({
   onSelect,
 }) => {
   return (
-    <View style={styles.container}>
-      {PRIORITY_OPTIONS.map((opt) => {
-        const isSelected = selected === opt.value;
-
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.container}
+    >
+      {PRIORITY_OPTIONS.map((item) => {
+        const isSelected = selected === item.value;
         return (
           <Pressable
-            key={opt.value}
-            onPress={() => onSelect(opt.value)}
+            key={item.value}
+            onPress={() => onSelect(item.value)}
             style={[
-              styles.option,
+              styles.pill,
               isSelected && {
-                borderColor: opt.color,
-                backgroundColor: `${opt.color}15`,
+                borderColor: item.color,
+                backgroundColor: `${item.color}15`,
+                transform: [{ scale: 1.05 }],
               },
             ]}
           >
-            <View style={[styles.dot, { backgroundColor: opt.color }]} />
-            <Text style={[styles.label, isSelected && { color: opt.color }]}>
-              {opt.label}
+            <View style={[styles.dot, { backgroundColor: item.color }]} />
+            <Text
+              style={[
+                styles.label,
+                { color: isSelected ? item.color : Colors.textSecondary },
+              ]}
+            >
+              {item.label}
             </Text>
           </Pressable>
         );
       })}
-    </View>
+    </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flexDirection: "row",
-    gap: Spacing.sm,
-    marginVertical: Spacing.xs,
+    gap: 12,
+    paddingVertical: 8,
   },
-  option: {
-    flex: 1,
+  pill: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: Radius.md,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 16,
     backgroundColor: "rgba(255,255,255,0.03)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.08)",
   },
   dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
   },
   label: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "600",
-    color: Colors.textSecondary,
   },
 });

@@ -80,17 +80,21 @@ export function formatDuration(minutes: number): string {
 import { Colors } from "../constants/theme";
 import { Priority } from "../types/task";
 
-export function priorityColor(priority: Priority | string): string {
+export function priorityColor(priority: Priority | string | number): string {
   switch (priority) {
+    case 1:
     case "p1":
     case "high":
       return Colors.priorityHigh;
+    case 2:
     case "p2":
     case "medium":
       return Colors.priorityMedium;
+    case 3:
     case "p3":
     case "low":
       return Colors.priorityLow;
+    case 4:
     case "p4":
     default:
       return Colors.textMuted;

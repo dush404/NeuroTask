@@ -59,13 +59,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                     style={[
                       styles.card,
                       {
-                        borderTopColor: priorityColor(
-                          task.priority === "p1"
-                            ? "high"
-                            : task.priority === "p2"
-                              ? "medium"
-                              : "low",
-                        ),
+                        borderTopColor: priorityColor(task.priority),
                       },
                     ]}
                   >
@@ -81,7 +75,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                         ))}
                       </View>
                     )}
-                    {task.dueDate && (
+                    {!!task.dueDate && (
                       <Text style={styles.cardMeta}>
                         📅{" "}
                         {new Date(task.dueDate).toLocaleDateString("en-US", {

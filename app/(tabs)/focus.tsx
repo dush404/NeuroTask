@@ -33,10 +33,25 @@ export default function FocusScreen() {
         />
       </View>
 
+      {/* ── Top Foreground Mask for Smooth Scroll Fade ── */}
+      <LinearGradient
+        colors={["#0D1F13", "#0D1F13", "#0D1F1300"]}
+        locations={[0, 0.7, 1]}
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: headerHeight + 20,
+          zIndex: 5,
+        }}
+        pointerEvents="none"
+      />
+
       <ScrollView
         contentContainerStyle={[
           styles.content,
-          { paddingTop: headerHeight, paddingBottom: pb },
+          { paddingTop: headerHeight + 20, paddingBottom: pb },
         ]}
         showsVerticalScrollIndicator={false}
       >
