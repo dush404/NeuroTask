@@ -1,5 +1,7 @@
-import React, { useEffect, useRef, useState } from "react";
+import { Play } from "lucide-react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Animated,
   NativeScrollEvent,
   NativeSyntheticEvent,
   ScrollView,
@@ -9,23 +11,176 @@ import {
 } from "react-native";
 import { Colors } from "../constants/theme";
 
-const ITEM_HEIGHT = 38; // Compact item height
-const VISIBLE_ITEMS = 5; // 5 visible to keep the nice "wheel" look
-const PICKER_HEIGHT = ITEM_HEIGHT * VISIBLE_ITEMS;
+// ─── Constants ───────────────────────────────────────────────────────────────
+const ITEM_H = 40; // height of every cell
+const VISIBLE = 5; // odd number — centre cell is the selection
+const HALF = 2; // (VISIBLE - 1) / 2  → padding on each side
+const PICKER_H = ITEM_H * VISIBLE;
 
-const padEmpty = (arr: any[]) => [
-  { id: "e1", val: null },
-  { id: "e2", val: null },
-  ...arr.map((val, i) => ({ id: i.toString(), val })),
-  { id: "e3", val: null },
-  { id: "e4", val: null },
-];
+// ─── Shared WheelColumn ──────────────────────────────────────────────────────
+interface WheelColumnProps {
+  data: string[]; // all option labels (already formatted)
+  selectedIndex: number;
+  onSelect: (index: number) => void;
+  width: number;
+  accentColor: string;
+}
 
-/* ── Inline Time Picker ─────────────────────────────────────────────────── */
-const hoursData = Array.from({ length: 24 }, (_, i) => i);
-const minsData = Array.from({ length: 60 }, (_, i) => i);
-const paddedHours = padEmpty(hoursData);
-const paddedMins = padEmpty(minsData);
+const WheelColumn: React.FC<WheelColumnProps> = ({
+  data,
+  selectedIndex,
+  onSelect,
+  width,
+  accentColor,
+}) => {
+  // Animated value tracks the raw contentOffset.y ─ used for per-item interpolation
+  const scrollY = useRef(new Animated.Value(selectedIndex * ITEM_H)).current;
+  // We keep a plain ref alongside so JS callbacks can read the latest value synchronously
+  const scrollYRaw = useRef(selectedIndex * ITEM_H);
+  const scrollRef = useRef<ScrollView>(null);
+  const settling = useRef(false); // guard against double-fire
+
+  // ── Initial scroll position ─────────────────────────────────────────────
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      scrollRef.current?.scrollTo({
+        y: selectedIndex * ITEM_H,
+        animated: false,
+      });
+    }, 40);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Force-snap to the nearest valid index ───────────────────────────────
+  const snapToNearest = useCallback(
+    (rawY: number) => {
+      if (settling.current) return;
+      settling.current = true;
+
+      const clamped = Math.max(
+        0,
+        Math.min(data.length - 1, Math.round(rawY / ITEM_H)),
+      );
+      const targetY = clamped * ITEM_H;
+
+      // Programmatically lock to the exact slot
+      scrollRef.current?.scrollTo({ y: targetY, animated: true });
+      onSelect(clamped);
+
+      // Release the guard after the animated scroll finishes (~150 ms)
+      setTimeout(() => {
+        settling.current = false;
+      }, 200);
+    },
+    [data.length, onSelect],
+  );
+
+  // ── Scroll event — drives Animated interpolations via native driver ──────
+  const onScroll = Animated.event(
+    [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+    {
+      useNativeDriver: true,
+      listener: (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+        scrollYRaw.current = e.nativeEvent.contentOffset.y;
+      },
+    },
+  );
+
+  // ── Fired when inertia ends (fast fling) ────────────────────────────────
+  const onMomentumScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    snapToNearest(e.nativeEvent.contentOffset.y);
+  };
+
+  // ── Fired when finger lifts (slow drag — the missing case before) ───────
+  const onScrollEndDrag = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const vy = e.nativeEvent.velocity?.y ?? 0;
+    // Only force-snap here if there is negligible velocity; otherwise let
+    // onMomentumScrollEnd take over to avoid fighting each other.
+    if (Math.abs(vy) < 0.3) {
+      snapToNearest(e.nativeEvent.contentOffset.y);
+    }
+  };
+
+  // ─── Render ──────────────────────────────────────────────────────────────
+  return (
+    <View style={[styles.columnOuter, { width }]}>
+      {/* @ts-ignore — Animated.ScrollView ref works fine at runtime */}
+      <Animated.ScrollView
+        ref={scrollRef as any}
+        showsVerticalScrollIndicator={false}
+        snapToInterval={ITEM_H}
+        decelerationRate="fast"
+        scrollEventThrottle={16}
+        nestedScrollEnabled
+        bounces={false}
+        contentContainerStyle={{ paddingVertical: HALF * ITEM_H }}
+        onScroll={onScroll}
+        onMomentumScrollEnd={onMomentumScrollEnd}
+        onScrollEndDrag={onScrollEndDrag}
+      >
+        {data.map((label, idx) => {
+          // ── Native-driver animated style per item ─────────────────────
+          // When scrollY === idx * ITEM_H, this item is centred.
+          const itemScrollPos = idx * ITEM_H;
+
+          const opacity = scrollY.interpolate({
+            inputRange: [
+              itemScrollPos - 2 * ITEM_H,
+              itemScrollPos - ITEM_H,
+              itemScrollPos,
+              itemScrollPos + ITEM_H,
+              itemScrollPos + 2 * ITEM_H,
+            ],
+            outputRange: [0.12, 0.36, 1, 0.36, 0.12],
+            extrapolate: "clamp",
+          });
+
+          const scale = scrollY.interpolate({
+            inputRange: [
+              itemScrollPos - 2 * ITEM_H,
+              itemScrollPos - ITEM_H,
+              itemScrollPos,
+              itemScrollPos + ITEM_H,
+              itemScrollPos + 2 * ITEM_H,
+            ],
+            outputRange: [0.72, 0.86, 1, 0.86, 0.72],
+            extrapolate: "clamp",
+          });
+
+          const isSelected = idx === selectedIndex;
+
+          return (
+            <Animated.View
+              key={`${idx}`}
+              style={[styles.item, { opacity, transform: [{ scale }] }]}
+            >
+              <Text
+                style={[
+                  styles.itemText,
+                  isSelected && [
+                    styles.itemTextSelected,
+                    { color: accentColor },
+                  ],
+                ]}
+              >
+                {label}
+              </Text>
+            </Animated.View>
+          );
+        })}
+      </Animated.ScrollView>
+    </View>
+  );
+};
+
+// ─── Inline Time Picker ───────────────────────────────────────────────────────
+const HOUR_LABELS = Array.from({ length: 24 }, (_, i) =>
+  i.toString().padStart(2, "0"),
+);
+const MIN_LABELS = Array.from({ length: 60 }, (_, i) =>
+  i.toString().padStart(2, "0"),
+);
 
 export const InlineTimePicker = ({
   time,
@@ -36,124 +191,86 @@ export const InlineTimePicker = ({
   onChange: (time: string) => void;
   accentColor?: string;
 }) => {
-  const initDate = new Date();
+  const now = new Date();
   const initH =
-    time && !isNaN(parseInt(time.split(":")[0]))
-      ? parseInt(time.split(":")[0])
-      : initDate.getHours();
+    time && !isNaN(+time.split(":")[0]) ? +time.split(":")[0] : now.getHours();
   const initM =
-    time && !isNaN(parseInt(time.split(":")[1]))
-      ? parseInt(time.split(":")[1])
-      : initDate.getMinutes();
+    time && !isNaN(+time.split(":")[1])
+      ? +time.split(":")[1]
+      : now.getMinutes();
 
   const [hours, setHours] = useState(initH);
   const [minutes, setMinutes] = useState(initM);
 
-  const hourListRef = useRef<ScrollView>(null);
-  const minListRef = useRef<ScrollView>(null);
+  // Keep refs so we can build the new time string without stale closures
+  const hoursRef = useRef(initH);
+  const minutesRef = useRef(initM);
 
-  useEffect(() => {
-    setTimeout(() => {
-      hourListRef.current?.scrollTo({
-        y: hours * ITEM_HEIGHT,
-        animated: false,
-      });
-      minListRef.current?.scrollTo({
-        y: minutes * ITEM_HEIGHT,
-        animated: false,
-      });
-    }, 50);
-  }, []);
+  const onSelectHour = useCallback(
+    (idx: number) => {
+      hoursRef.current = idx;
+      setHours(idx);
+      onChange(
+        `${idx.toString().padStart(2, "0")}:${minutesRef.current.toString().padStart(2, "0")}`,
+      );
+    },
+    [onChange],
+  );
 
-  const handleScroll = (
-    type: "h" | "m",
-    e: NativeSyntheticEvent<NativeScrollEvent>,
-  ) => {
-    const y = e.nativeEvent.contentOffset.y;
-    const index = Math.round(y / ITEM_HEIGHT);
-
-    if (type === "h") {
-      if (index >= 0 && index < 24) {
-        setHours(index);
-        onChange(`${index.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`);
-      }
-    } else {
-      if (index >= 0 && index < 60) {
-        setMinutes(index);
-        onChange(`${hours.toString().padStart(2, "0")}:${index.toString().padStart(2, "0")}`);
-      }
-    }
-  };
+  const onSelectMinute = useCallback(
+    (idx: number) => {
+      minutesRef.current = idx;
+      setMinutes(idx);
+      onChange(
+        `${hoursRef.current.toString().padStart(2, "0")}:${idx.toString().padStart(2, "0")}`,
+      );
+    },
+    [onChange],
+  );
 
   return (
     <View style={styles.wheelContainer}>
-      <View style={styles.selectionHighlight} pointerEvents="none" />
-      
-      <View style={[styles.wheelWrapper, { width: 70 }]}>
-        <ScrollView
-          ref={hourListRef}
-          showsVerticalScrollIndicator={false}
-          nestedScrollEnabled={true}
-          snapToInterval={ITEM_HEIGHT}
-          decelerationRate="fast"
-          onMomentumScrollEnd={(e) => handleScroll("h", e)}
-        >
-          {paddedHours.map((item) => {
-            const isValid = item.val !== null;
-            const isSelected = item.val === hours;
-            return (
-              <View key={`h-${item.id}`} style={styles.item}>
-                <Text
-                  style={[
-                    styles.itemText,
-                    !isValid && { opacity: 0 },
-                    isSelected && [styles.itemTextSelected, { color: accentColor }],
-                  ]}
-                >
-                  {isValid ? item.val.toString().padStart(2, "0") : ""}
-                </Text>
-              </View>
-            );
-          })}
-        </ScrollView>
+      {/* Centred glass highlight band */}
+      <View style={styles.selectionHighlight} pointerEvents="none">
+        <Play size={14} color={accentColor} fill={accentColor} />
       </View>
-      
+
+      <WheelColumn
+        data={HOUR_LABELS}
+        selectedIndex={hours}
+        onSelect={onSelectHour}
+        width={72}
+        accentColor={accentColor}
+      />
+
       <Text style={[styles.colon, { color: accentColor }]}>:</Text>
-      
-      <View style={[styles.wheelWrapper, { width: 70 }]}>
-        <ScrollView
-          ref={minListRef}
-          showsVerticalScrollIndicator={false}
-          nestedScrollEnabled={true}
-          snapToInterval={ITEM_HEIGHT}
-          decelerationRate="fast"
-          onMomentumScrollEnd={(e) => handleScroll("m", e)}
-        >
-          {paddedMins.map((item) => {
-            const isValid = item.val !== null;
-            const isSelected = item.val === minutes;
-            return (
-              <View key={`m-${item.id}`} style={styles.item}>
-                <Text
-                  style={[
-                    styles.itemText,
-                    !isValid && { opacity: 0 },
-                    isSelected && [styles.itemTextSelected, { color: accentColor }],
-                  ]}
-                >
-                  {isValid ? item.val.toString().padStart(2, "0") : ""}
-                </Text>
-              </View>
-            );
-          })}
-        </ScrollView>
-      </View>
+
+      <WheelColumn
+        data={MIN_LABELS}
+        selectedIndex={minutes}
+        onSelect={onSelectMinute}
+        width={72}
+        accentColor={accentColor}
+      />
     </View>
   );
 };
 
-/* ── Inline Date Picker ─────────────────────────────────────────────────── */
-const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+// ─── Inline Date Picker ───────────────────────────────────────────────────────
+const MONTH_LABELS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
 
 export const InlineDatePicker = ({
   dateIso,
@@ -164,167 +281,164 @@ export const InlineDatePicker = ({
   onChange: (iso: string) => void;
   accentColor?: string;
 }) => {
-  const initDate = dateIso ? new Date(dateIso) : new Date();
+  const init = dateIso ? new Date(dateIso) : new Date();
 
-  const [day, setDay] = useState(initDate.getDate());
-  const [month, setMonth] = useState(initDate.getMonth());
-  const [year, setYear] = useState(initDate.getFullYear());
+  const [day, setDay] = useState(init.getDate()); // 1-indexed
+  const [month, setMonth] = useState(init.getMonth()); // 0-indexed
+  const [year, setYear] = useState(init.getFullYear());
 
-  const dayListRef = useRef<ScrollView>(null);
-  const monthListRef = useRef<ScrollView>(null);
-  const yearListRef = useRef<ScrollView>(null);
+  // Refs to read latest values inside callbacks without stale closures
+  const dayRef = useRef(init.getDate());
+  const monthRef = useRef(init.getMonth());
+  const yearRef = useRef(init.getFullYear());
 
+  const curYear = new Date().getFullYear();
+  const YEAR_LABELS = Array.from({ length: 10 }, (_, i) =>
+    String(curYear - 1 + i),
+  );
+
+  // Day labels are rebuilt when month/year changes so the count is correct
   const maxDays = new Date(year, month + 1, 0).getDate();
-  const daysData = Array.from({ length: maxDays }, (_, i) => i + 1);
-  const paddedDays = padEmpty(daysData);
+  const DAY_LABELS = Array.from({ length: maxDays }, (_, i) =>
+    String(i + 1).padStart(2, "0"),
+  );
 
-  const paddedMonths = padEmpty(MONTHS);
-
-  const currentYear = new Date().getFullYear();
-  const yearsData = Array.from({ length: 10 }, (_, i) => currentYear - 1 + i);
-  const paddedYears = padEmpty(yearsData);
-
-  useEffect(() => {
-    setTimeout(() => {
-      dayListRef.current?.scrollTo({
-        y: (day - 1) * ITEM_HEIGHT,
-        animated: false,
-      });
-      monthListRef.current?.scrollTo({
-        y: month * ITEM_HEIGHT,
-        animated: false,
-      });
-
-      const yIndex = yearsData.indexOf(year);
-      if (yIndex !== -1) {
-        yearListRef.current?.scrollTo({
-          y: yIndex * ITEM_HEIGHT,
-          animated: false,
-        });
-      }
-    }, 50);
-  }, []); // Only scroll once on mount
-
-  const emitChange = (d: number, m: number, y: number) => {
-    const validDay = Math.min(d, new Date(y, m + 1, 0).getDate());
-    const iso = `${y}-${String(m + 1).padStart(2, "0")}-${String(validDay).padStart(2, "0")}`;
-    onChange(iso);
+  const emit = (d: number, m: number, y: number) => {
+    const validD = Math.min(d, new Date(y, m + 1, 0).getDate());
+    onChange(
+      `${y}-${String(m + 1).padStart(2, "0")}-${String(validD).padStart(2, "0")}`,
+    );
   };
 
-  const handleScroll = (
-    type: "d" | "m" | "y",
-    e: NativeSyntheticEvent<NativeScrollEvent>,
-  ) => {
-    const yOffset = e.nativeEvent.contentOffset.y;
-    const index = Math.round(yOffset / ITEM_HEIGHT);
+  const onSelectDay = useCallback(
+    (idx: number) => {
+      const d = idx + 1; // convert 0-index → actual day number
+      dayRef.current = d;
+      setDay(d);
+      emit(d, monthRef.current, yearRef.current);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
 
-    if (type === "d") {
-      if (index >= 0 && index < daysData.length) {
-        const newDay = daysData[index];
-        setDay(newDay);
-        emitChange(newDay, month, year);
-      }
-    } else if (type === "m") {
-      if (index >= 0 && index < 12) {
-        setMonth(index);
-        emitChange(day, index, year);
-      }
-    } else if (type === "y") {
-      if (index >= 0 && index < yearsData.length) {
-        const newYear = yearsData[index];
-        setYear(newYear);
-        emitChange(day, month, newYear);
-      }
-    }
-  };
+  const onSelectMonth = useCallback(
+    (idx: number) => {
+      monthRef.current = idx;
+      setMonth(idx);
+      emit(dayRef.current, idx, yearRef.current);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
 
-  const renderList = (
-    ref: React.RefObject<ScrollView | null>,
-    data: any[],
-    type: "d" | "m" | "y",
-    selectedValue: any,
-    width: number,
-  ) => (
-    <View style={[styles.wheelWrapper, { width }]}>
-      <ScrollView
-        ref={ref}
-        showsVerticalScrollIndicator={false}
-        nestedScrollEnabled={true}
-        snapToInterval={ITEM_HEIGHT}
-        decelerationRate="fast"
-        onMomentumScrollEnd={(e) => handleScroll(type, e)}
-      >
-        {data.map((item) => {
-          const isValid = item.val !== null;
-          const isSelected = item.val === selectedValue;
-          return (
-            <View key={`${type}-${item.id}`} style={styles.item}>
-              <Text
-                style={[
-                  styles.itemText,
-                  !isValid && { opacity: 0 },
-                  isSelected && [styles.itemTextSelected, { color: accentColor }],
-                ]}
-              >
-                {isValid
-                  ? type === "d"
-                    ? item.val.toString().padStart(2, "0")
-                    : item.val
-                  : ""}
-              </Text>
-            </View>
-          );
-        })}
-      </ScrollView>
-    </View>
+  const onSelectYear = useCallback(
+    (idx: number) => {
+      const y = curYear - 1 + idx;
+      yearRef.current = y;
+      setYear(y);
+      emit(dayRef.current, monthRef.current, y);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [curYear],
   );
 
   return (
     <View style={styles.wheelContainer}>
-      <View style={styles.selectionHighlight} pointerEvents="none" />
-      {renderList(dayListRef, paddedDays, "d", day, 60)}
-      {renderList(monthListRef, paddedMonths, "m", MONTHS[month], 80)}
-      {renderList(yearListRef, paddedYears, "y", year, 80)}
+      <View style={styles.selectionHighlight} pointerEvents="none">
+        <Play size={14} color={accentColor} fill={accentColor} />
+      </View>
+
+      {/* Day — 0-indexed: day 1 = index 0 */}
+      <WheelColumn
+        key={`day-${maxDays}`} // remount when month changes so max day count updates
+        data={DAY_LABELS}
+        selectedIndex={Math.min(day - 1, maxDays - 1)}
+        onSelect={onSelectDay}
+        width={58}
+        accentColor={accentColor}
+      />
+
+      {/* Month */}
+      <View style={styles.sep} />
+      <WheelColumn
+        data={MONTH_LABELS}
+        selectedIndex={month}
+        onSelect={onSelectMonth}
+        width={72}
+        accentColor={accentColor}
+      />
+
+      {/* Year */}
+      <View style={styles.sep} />
+      <WheelColumn
+        data={YEAR_LABELS}
+        selectedIndex={Math.max(0, year - (curYear - 1))}
+        onSelect={onSelectYear}
+        width={72}
+        accentColor={accentColor}
+      />
     </View>
   );
 };
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   wheelContainer: {
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    height: VISIBLE_ITEMS * ITEM_HEIGHT,
+    height: PICKER_H,
     position: "relative",
-    paddingVertical: 10,
+    paddingVertical: 8,
   },
+
+  // Frosted glass band behind the centre (selected) row
   selectionHighlight: {
     position: "absolute",
-    top: 2 * ITEM_HEIGHT + 10,
-    height: ITEM_HEIGHT,
-    width: "90%",
-    backgroundColor: "rgba(255,255,255,0.04)",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    top: HALF * ITEM_H, // Exactly mathematically centered
+    height: ITEM_H,
+    left: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 1,
   },
-  wheelWrapper: { height: "100%" },
+
+  columnOuter: {
+    height: PICKER_H,
+    overflow: "hidden",
+  },
+
+  sep: {
+    width: 1,
+    height: ITEM_H * 0.55,
+    backgroundColor: "rgba(255,255,255,0.07)",
+    marginHorizontal: 6,
+  },
+
   colon: {
     fontSize: 22,
-    fontWeight: "bold",
-    marginHorizontal: 12,
+    fontWeight: "800",
+    marginHorizontal: 10,
     opacity: 0.9,
+    lineHeight: ITEM_H,
   },
-  item: { height: ITEM_HEIGHT, justifyContent: "center", alignItems: "center" },
+
+  item: {
+    height: ITEM_H,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
   itemText: {
-    fontSize: 17,
+    fontSize: 16,
     color: Colors.textSecondary,
     fontWeight: "500",
-    opacity: 0.35,
+    opacity: 0.9, // additional opacity baked in (the Animated opacity handles the fade)
   },
+
   itemTextSelected: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: "800",
-    opacity: 1,
+    letterSpacing: -0.3,
   },
 });

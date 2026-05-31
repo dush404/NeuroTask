@@ -1,16 +1,27 @@
-﻿import { BlurView } from "expo-blur";
+import { BlurView } from "expo-blur";
 import {
   AlertCircle,
+  Bike,
   Briefcase,
+  Bus,
   Calendar,
+  Car,
   Check,
   ChevronDown,
   ChevronsDown,
   ChevronsUp,
   ChevronUp,
   Clock,
+  FileText,
+  GripVertical,
+  ListChecks,
+  MapPin,
   Minus,
   Navigation,
+  Plane,
+  Plus,
+  Save,
+  Train,
   Trash2,
   X,
 } from "lucide-react-native";
@@ -21,6 +32,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -28,6 +40,9 @@ import {
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
+  FadeInDown,
+  FadeOutUp,
+  Layout,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
@@ -38,7 +53,16 @@ import { useTaskStore } from "../store/useTaskStore";
 import { Priority, Subtask, Task, TaskType } from "../types/task";
 import { InlineDatePicker, InlineTimePicker } from "./InlineWheelPickers";
 import { StripedBackground } from "./StripedBackground";
+
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
+
+const TRAVEL_MODES = [
+  { id: "plane", Icon: Plane },
+  { id: "train", Icon: Train },
+  { id: "bus", Icon: Bus },
+  { id: "car", Icon: Car },
+  { id: "bike", Icon: Bike },
+] as const;
 const PRIORITY_OPTIONS: {
   value: Priority;
   label: string;
@@ -190,6 +214,8 @@ export function ScheduleTaskSheet({
   const [travelMode, setTravelMode] = useState("plane");
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const titleRef = useRef<TextInput>(null);
+  // Bumping this collapses every ExtraSection + closes all pickers
+  const [collapseSignal, setCollapseSignal] = useState(0);
 
   // ── Animation state ─────────────────────────────────────────────
   const [internalVisible, setInternalVisible] = useState(false);
@@ -203,20 +229,20 @@ export function ScheduleTaskSheet({
       setInternalVisible(true);
       requestAnimationFrame(() => {
         sheetTranslateY.value = withSpring(0, {
-          damping: 24,
-          stiffness: 200,
+          damping: 30,
+          stiffness: 350,
           mass: 0.8,
         });
-        bgOpacity.value = withTiming(1, { duration: 250 });
+        bgOpacity.value = withTiming(1, { duration: 150 });
       });
     } else if (internalVisible) {
       Keyboard.dismiss();
       sheetTranslateY.value = withSpring(SCREEN_HEIGHT, {
-        damping: 24,
-        stiffness: 200,
+        damping: 30,
+        stiffness: 350,
         mass: 0.8,
       });
-      bgOpacity.value = withTiming(0, { duration: 250 }, (isFinished) => {
+      bgOpacity.value = withTiming(0, { duration: 150 }, (isFinished) => {
         if (isFinished) {
           runOnJS(setInternalVisible)(false);
         }
@@ -224,14 +250,15 @@ export function ScheduleTaskSheet({
     }
   }, [visible, internalVisible]);
 
-  // Keyboard listeners
+  // Keyboard listeners — iOS only
+  // (Android handles avoidance natively via windowSoftInputMode)
   useEffect(() => {
     if (Platform.OS !== "ios") return;
     const showSub = Keyboard.addListener("keyboardWillShow", (e) => {
-      kbHeight.value = withTiming(e.endCoordinates.height, { duration: 250 });
+      kbHeight.value = withTiming(e.endCoordinates.height, { duration: 280 });
     });
     const hideSub = Keyboard.addListener("keyboardWillHide", () => {
-      kbHeight.value = withTiming(0, { duration: 250 });
+      kbHeight.value = withTiming(0, { duration: 200 });
     });
     return () => {
       showSub.remove();
@@ -387,8 +414,8 @@ export function ScheduleTaskSheet({
             runOnJS(onClose)();
           } else {
             sheetTranslateY.value = withSpring(0, {
-              damping: 24,
-              stiffness: 200,
+              damping: 30,
+              stiffness: 350,
               mass: 0.8,
             });
             if (e.translationY < -40) {
@@ -407,8 +434,11 @@ export function ScheduleTaskSheet({
     transform: [{ translateY: sheetTranslateY.value }],
   }));
 
-  const kbSpacerStyle = useAnimatedStyle(() => ({
-    height: kbHeight.value,
+  // ── The container slides up when the keyboard appears so the whole card
+  //    stays visible — instead of growing the card from inside (which pushed
+  //    the task-name row off the top of the screen).
+  const kbContainerStyle = useAnimatedStyle(() => ({
+    paddingBottom: 20 + kbHeight.value,
   }));
 
   if (!task) return null;
@@ -428,8 +458,11 @@ export function ScheduleTaskSheet({
         </BlurView>
       </Animated.View>
 
-      {/* Centred card */}
-      <View style={styles.centreContainer} pointerEvents="box-none">
+      {/* Card — sits at the bottom; rises when keyboard appears */}
+      <Animated.View
+        style={[styles.centreContainer, kbContainerStyle]}
+        pointerEvents="box-none"
+      >
         <Animated.View style={[styles.compactCard, sheetStyle]}>
           <BlurView
             intensity={32}
@@ -437,8 +470,6 @@ export function ScheduleTaskSheet({
             style={StyleSheet.absoluteFill}
             experimentalBlurMethod="dimezisBlurView"
           />
-          {/* Priority-tinted stripes */}
-          <StripedBackground color={selectedPriorityColor} opacity={0.06} />
 
           {/* ── Drag handle ─────────────────────────────── */}
           <GestureDetector gesture={handlePan}>
@@ -459,6 +490,13 @@ export function ScheduleTaskSheet({
               placeholderTextColor="rgba(255,255,255,0.28)"
               returnKeyType="done"
               onSubmitEditing={handleSaveAndClose}
+              onFocus={() => {
+                // Close pickers + collapse all extra sections
+                setShowDatePicker(false);
+                setShowStartPicker(false);
+                setShowEndPicker(false);
+                setCollapseSignal((n) => n + 1);
+              }}
             />
 
             {/* Type chip — tap to cycle */}
@@ -537,7 +575,8 @@ export function ScheduleTaskSheet({
           {/* ══ ROW 2 — Date ══════════════════════════════════════ */}
           <Pressable
             style={styles.row2}
-            onPress={() => {
+          onPress={() => {
+              Keyboard.dismiss();
               setShowDatePicker(!showDatePicker);
               setShowStartPicker(false);
               setShowEndPicker(false);
@@ -588,6 +627,7 @@ export function ScheduleTaskSheet({
             <Pressable
               style={styles.timeHalf}
               onPress={() => {
+                Keyboard.dismiss();
                 setShowStartPicker(!showStartPicker);
                 setShowDatePicker(false);
                 setShowEndPicker(false);
@@ -617,6 +657,7 @@ export function ScheduleTaskSheet({
             <Pressable
               style={styles.timeHalf}
               onPress={() => {
+                Keyboard.dismiss();
                 setShowEndPicker(!showEndPicker);
                 setShowDatePicker(false);
                 setShowStartPicker(false);
@@ -655,8 +696,176 @@ export function ScheduleTaskSheet({
             </View>
           )}
 
+          {/* ══ EXTRAS — Checklist · Notes · Travel ══════════════ */}
+          <ScrollView
+            style={styles.extrasScroll}
+            contentContainerStyle={styles.extrasContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            keyboardDismissMode="interactive"
+            nestedScrollEnabled
+          >
+            {/* ── Checklist section ───────────────────────────── */}
+            <ExtraSection
+              icon={<ListChecks size={14} color={selectedPriorityColor} />}
+              label="Checklist"
+              count={subtasks.length}
+              accentColor={selectedPriorityColor}
+              collapseSignal={collapseSignal}
+            >
+              {/* Add row */}
+              <View style={styles.extraInputRow}>
+                <Plus size={15} color="rgba(255,255,255,0.3)" />
+                <TextInput
+                  style={styles.extraInput}
+                  placeholder="Add item…"
+                  placeholderTextColor="rgba(255,255,255,0.25)"
+                  value={newSubtask}
+                  onChangeText={setNewSubtask}
+                  onSubmitEditing={handleAddSubtask}
+                  returnKeyType="done"
+                />
+                {newSubtask.trim().length > 0 && (
+                  <Pressable
+                    style={[
+                      styles.miniBtn,
+                      { backgroundColor: selectedPriorityColor },
+                    ]}
+                    onPress={handleAddSubtask}
+                  >
+                    <Check size={12} color="#000" strokeWidth={3} />
+                  </Pressable>
+                )}
+              </View>
+
+              {/* Items */}
+              {subtasks.map((sub, idx) => (
+                <Animated.View
+                  key={sub.id}
+                  entering={FadeInDown.delay(idx * 30).duration(200)}
+                  exiting={FadeOutUp.duration(150)}
+                  layout={Layout.springify()}
+                >
+                  <View style={styles.subtaskRow}>
+                    <GripVertical size={14} color="rgba(255,255,255,0.15)" />
+                    <Pressable
+                      style={[
+                        styles.subtaskCheck,
+                        sub.completed && {
+                          backgroundColor: selectedPriorityColor,
+                          borderColor: selectedPriorityColor,
+                        },
+                      ]}
+                      onPress={() => handleToggleSubtask(sub.id)}
+                    >
+                      {sub.completed && (
+                        <Check size={10} color="#000" strokeWidth={3} />
+                      )}
+                    </Pressable>
+                    <Text
+                      style={[
+                        styles.subtaskText,
+                        sub.completed && styles.subtaskTextDone,
+                      ]}
+                    >
+                      {sub.title}
+                    </Text>
+                    <Pressable
+                      onPress={() => handleDeleteSubtask(sub.id)}
+                      hitSlop={8}
+                    >
+                      <X size={13} color="rgba(255,77,109,0.6)" />
+                    </Pressable>
+                  </View>
+                </Animated.View>
+              ))}
+            </ExtraSection>
+
+            {/* ── Notes section ───────────────────────────────── */}
+            <ExtraSection
+              icon={<FileText size={14} color={selectedPriorityColor} />}
+              label="Notes"
+              accentColor={selectedPriorityColor}
+              collapseSignal={collapseSignal}
+            >
+              <TextInput
+                style={styles.notesInput}
+                value={notes}
+                onChangeText={setNotes}
+                placeholder="Context, links, a quick brief…"
+                placeholderTextColor="rgba(255,255,255,0.2)"
+                multiline
+                textAlignVertical="top"
+              />
+            </ExtraSection>
+
+            {/* ── Travel section (toGo only) ───────────────────── */}
+            {taskType === "toGo" && (
+              <ExtraSection
+                icon={<Navigation size={14} color={selectedPriorityColor} />}
+                label="Travel"
+                accentColor={selectedPriorityColor}
+                defaultOpen
+                collapseSignal={collapseSignal}
+              >
+                {/* Transport chips */}
+                <View style={styles.transportRow}>
+                  {TRAVEL_MODES.map((mode) => (
+                    <Pressable
+                      key={mode.id}
+                      style={[
+                        styles.transportChip,
+                        travelMode === mode.id && {
+                          borderColor: selectedPriorityColor,
+                          backgroundColor: `${selectedPriorityColor}18`,
+                        },
+                      ]}
+                      onPress={() => setTravelMode(mode.id)}
+                    >
+                      <mode.Icon
+                        size={15}
+                        color={
+                          travelMode === mode.id
+                            ? selectedPriorityColor
+                            : "rgba(255,255,255,0.35)"
+                        }
+                      />
+                    </Pressable>
+                  ))}
+                </View>
+
+                {/* From */}
+                <View style={styles.locationRow}>
+                  <Navigation size={13} color={selectedPriorityColor} />
+                  <TextInput
+                    style={styles.locationInput}
+                    value={fromLocation}
+                    onChangeText={setFromLocation}
+                    placeholder="From…"
+                    placeholderTextColor="rgba(255,255,255,0.22)"
+                  />
+                </View>
+
+                {/* To */}
+                <View style={[styles.locationRow, { marginTop: 8 }]}>
+                  <MapPin size={13} color="#FF6B9D" />
+                  <TextInput
+                    style={styles.locationInput}
+                    value={toLocation}
+                    onChangeText={setToLocation}
+                    placeholder="To…"
+                    placeholderTextColor="rgba(255,255,255,0.22)"
+                  />
+                </View>
+              </ExtraSection>
+            )}
+          </ScrollView>
+
           {/* ══ Bottom action row ═══════════════════════════════ */}
           <View style={styles.bottomRow}>
+            <View style={StyleSheet.absoluteFill} pointerEvents="none">
+              <StripedBackground color={selectedPriorityColor} opacity={0.06} />
+            </View>
             {/* Duration badge */}
             <View style={styles.durationBadge}>
               <Clock size={11} color="rgba(255,255,255,0.35)" />
@@ -667,36 +876,120 @@ export function ScheduleTaskSheet({
 
             {/* Delete (existing tasks only) */}
             {isExistingTask && (
-              <Pressable onPress={handleDelete} style={styles.actionBtn}>
-                <Trash2 size={20} color="#FF4D6D" />
+              <Pressable
+                onPress={handleDelete}
+                style={[styles.actionBtn, styles.deleteBtn]}
+              >
+                <Trash2 size={16} color="#FF4D6D" />
               </Pressable>
             )}
 
             {/* Close */}
-            <Pressable onPress={onClose} style={styles.actionBtn}>
-              <X size={22} color="rgba(255,255,255,0.55)" />
+            <Pressable
+              onPress={onClose}
+              style={[styles.actionBtn, styles.cancelBtn]}
+            >
+              <X size={18} color="rgba(255,255,255,0.55)" />
             </Pressable>
 
             {/* Save / confirm */}
             <Pressable
               onPress={handleSaveAndClose}
               disabled={!canSave}
-              style={styles.actionBtn}
+              style={[
+                styles.actionBtn,
+                {
+                  backgroundColor: canSave
+                    ? `${selectedPriorityColor}28`
+                    : "rgba(255,255,255,0.04)",
+                  borderColor: canSave
+                    ? `${selectedPriorityColor}70`
+                    : "rgba(255,255,255,0.08)",
+                },
+              ]}
             >
-              <Check
-                size={22}
-                color={
-                  canSave ? selectedPriorityColor : "rgba(255,255,255,0.25)"
-                }
-                strokeWidth={3}
-              />
+              {isExistingTask ? (
+                <Save
+                  size={17}
+                  color={
+                    canSave ? selectedPriorityColor : "rgba(255,255,255,0.25)"
+                  }
+                  strokeWidth={2.5}
+                />
+              ) : (
+                <Check
+                  size={18}
+                  color={
+                    canSave ? selectedPriorityColor : "rgba(255,255,255,0.25)"
+                  }
+                  strokeWidth={3}
+                />
+              )}
             </Pressable>
           </View>
-
-          <Animated.View style={kbSpacerStyle} pointerEvents="none" />
         </Animated.View>
-      </View>
+      </Animated.View>
     </Modal>
+  );
+}
+
+/* ── ExtraSection — collapsible row used for Checklist / Notes / Travel ── */
+function ExtraSection({
+  icon,
+  label,
+  count,
+  accentColor,
+  defaultOpen = false,
+  collapseSignal = 0,
+  children,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  count?: number;
+  accentColor: string;
+  defaultOpen?: boolean;
+  collapseSignal?: number;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  // Close when parent requests collapse (e.g. title input focused)
+  useEffect(() => {
+    if (collapseSignal > 0) setOpen(false);
+  }, [collapseSignal]);
+  return (
+    <View style={xStyles.section}>
+      {/* Header row — tap to toggle */}
+      <Pressable style={xStyles.header} onPress={() => setOpen((v) => !v)}>
+        <View
+          style={[
+            xStyles.headerIconBg,
+            { backgroundColor: `${accentColor}14` },
+          ]}
+        >
+          {icon}
+        </View>
+        <Text style={xStyles.headerLabel}>{label}</Text>
+        {count !== undefined && count > 0 && (
+          <View
+            style={[xStyles.badge, { backgroundColor: `${accentColor}28` }]}
+          >
+            <Text style={[xStyles.badgeText, { color: accentColor }]}>
+              {count}
+            </Text>
+          </View>
+        )}
+        <View style={{ flex: 1 }} />
+        {open ? (
+          <ChevronUp size={15} color={accentColor} />
+        ) : (
+          <ChevronDown size={15} color="rgba(255,255,255,0.3)" />
+        )}
+      </Pressable>
+
+      {/* Body */}
+      {open && <View style={xStyles.body}>{children}</View>}
+    </View>
   );
 }
 
@@ -706,7 +999,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "flex-end",
     paddingHorizontal: 12,
-    paddingBottom: 20,
+    // paddingBottom supplied by kbContainerStyle (starts at 20, adds kb height)
   },
 
   /* ── The single compact card ──────────────────────────────────── */
@@ -823,6 +1116,105 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderColor: "rgba(255,255,255,0.06)",
     paddingVertical: 8,
+    backgroundColor: "rgba(0,0,0,0.1)",
+    overflow: "hidden",
+  },
+
+  /* ── Extras scroll area ────────────────────────────────────────── */
+  extrasScroll: {
+    maxHeight: 260,
+    borderTopWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+  },
+  extrasContent: {
+    paddingBottom: 4,
+  },
+
+  /* ── ExtraSection internals reused here for subtasks ──────────── */
+  extraInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  extraInput: {
+    flex: 1,
+    fontSize: 14,
+    color: "#fff",
+    padding: 0,
+  },
+  miniBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  subtaskRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    gap: 8,
+    borderTopWidth: 1,
+    borderColor: "rgba(255,255,255,0.04)",
+  },
+  subtaskCheck: {
+    width: 18,
+    height: 18,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  subtaskText: {
+    flex: 1,
+    fontSize: 13,
+    color: "rgba(255,255,255,0.8)",
+    fontWeight: "500",
+  },
+  subtaskTextDone: {
+    color: "rgba(255,255,255,0.3)",
+    textDecorationLine: "line-through",
+  },
+  notesInput: {
+    minHeight: 70,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: "#fff",
+    lineHeight: 20,
+  },
+  transportRow: {
+    flexDirection: "row",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingTop: 4,
+    paddingBottom: 10,
+  },
+  transportChip: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.07)",
+    alignItems: "center",
+  },
+  locationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingBottom: 8,
+  },
+  locationInput: {
+    flex: 1,
+    fontSize: 13,
+    color: "#fff",
+    padding: 0,
   },
 
   /* ── Bottom action row ─────────────────────────────────────────── */
@@ -849,7 +1241,61 @@ const styles = StyleSheet.create({
   actionBtn: {
     width: 38,
     height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
+  },
+  cancelBtn: {
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  deleteBtn: {
+    backgroundColor: "rgba(255,77,109,0.08)",
+    borderColor: "rgba(255,77,109,0.28)",
+  },
+});
+
+/* ── ExtraSection styles (outside main StyleSheet to stay co-located) ─── */
+const xStyles = StyleSheet.create({
+  section: {
+    borderTopWidth: 1,
+    borderColor: "rgba(255,255,255,0.05)",
+    overflow: "hidden",
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    gap: 9,
+  },
+  headerIconBg: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "rgba(255,255,255,0.6)",
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  badge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  badgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  body: {
+    backgroundColor: "rgba(0,0,0,0.1)",
+    borderTopWidth: 1,
+    borderColor: "rgba(255,255,255,0.05)",
   },
 });

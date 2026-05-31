@@ -566,7 +566,7 @@ export default function HabitsScreen() {
 
       {/* ── FABs ─────────────────────────────────────────────────────────── */}
       <TouchableOpacity
-        style={[styles.fab, { bottom: Math.max(insets.bottom, 16) + 12 }]}
+        style={[styles.fab, { bottom: Math.max(insets.bottom, 8) + 96 }]}
         onPress={() => setShowModal(true)}
         activeOpacity={0.85}
       >

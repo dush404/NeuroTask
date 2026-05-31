@@ -2,7 +2,7 @@
 // Static UI recreation matching reference image down to the pixel
 
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+
 import {
   Activity,
   Briefcase,
@@ -10,12 +10,10 @@ import {
   Dumbbell as DumbbellIcon,
   HeartPulse,
   ListTodo,
-  Plus,
-  Sparkles,
   Utensils,
 } from "lucide-react-native";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import {
   Gesture,
   GestureDetector,
@@ -772,7 +770,7 @@ export default function DashboardExact() {
           style={styles.timelineScroll}
           contentContainerStyle={[
             styles.timelineContent,
-            { paddingTop: headerHeight + 20 },
+            { paddingTop: headerHeight + 20, paddingBottom: 20 },
           ]}
           showsVerticalScrollIndicator={false}
         >
@@ -796,34 +794,10 @@ export default function DashboardExact() {
               />
             ))
           )}
-          <View style={{ height: 80 }} />
+          <View style={{ height: 140 }} />
         </ScrollView>
       </GestureDetector>
 
-      {/* ── Floating Action Buttons (FABs) ───────────────────────────── */}
-      <View style={styles.fabContainer}>
-        <TouchableOpacity
-          style={styles.fabAI}
-          activeOpacity={0.85}
-          onPress={() => router.push("/ai-chat")}
-        >
-          <View style={styles.fabAIGlow} />
-          <View style={styles.fabAIInner}>
-            <Sparkles size={20} color="#E9D5FF" />
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.fabMain}
-          activeOpacity={0.85}
-          onPress={handleCreateTask}
-        >
-          <View style={styles.fabMainGlow} />
-          <View style={styles.fabMainInner}>
-            <Plus size={22} color="#fff" strokeWidth={2.5} />
-          </View>
-        </TouchableOpacity>
-      </View>
 
       {/* ── Task Detail Sheet ────────────────────────────────────────── */}
       <ScheduleTaskSheet

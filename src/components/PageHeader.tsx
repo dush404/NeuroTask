@@ -1,15 +1,14 @@
 // NeuroTask — Shared Page Header Component
-// Consistent header with menu button, navigation, and task completion ring.
-// Used across all tab pages (excluding AI chat).
+// Consistent header with menu button and task completion ring.
+// Navigation is handled by the bottom tab bar — no TopNavItems toggle.
 
 import { Menu } from "lucide-react-native";
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import Animated, { FadeInLeft, FadeInRight } from "react-native-reanimated";
+import Animated, { FadeInRight } from "react-native-reanimated";
 import Svg, { Circle as SvgCircle } from "react-native-svg";
 import { Colors } from "../constants/theme";
 import { useTaskStore } from "../store/useTaskStore";
-import { TopNavItems } from "./TopNavItems";
 
 interface PageHeaderProps {
   title: string;
@@ -84,7 +83,6 @@ const CompletionRing = ({
 
 export const PageHeader: React.FC<PageHeaderProps> = ({ title, children }) => {
   const { tasks } = useTaskStore();
-  const [showNav, setShowNav] = useState(false);
 
   const todayStr = new Date().toISOString().split("T")[0];
 
@@ -100,22 +98,12 @@ export const PageHeader: React.FC<PageHeaderProps> = ({ title, children }) => {
   return (
     <View style={styles.header}>
       <View style={styles.headerLeft}>
-        <TouchableOpacity
-          onPress={() => setShowNav(!showNav)}
-          style={styles.menuBtn}
-          activeOpacity={0.8}
-        >
+        {/* Menu button kept for visual balance / future drawer */}
+        <TouchableOpacity style={styles.menuBtn} activeOpacity={0.8}>
           <Menu size={20} color={Colors.textSecondary} />
         </TouchableOpacity>
-        {showNav ? (
-          <Animated.View
-            key="nav"
-            entering={FadeInLeft.springify().damping(20).stiffness(200)}
-            style={{ flex: 1 }}
-          >
-            <TopNavItems />
-          </Animated.View>
-        ) : children ? (
+
+        {children ? (
           <Animated.View
             key="children"
             entering={FadeInRight.springify().damping(20).stiffness(200)}
@@ -125,7 +113,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({ title, children }) => {
           </Animated.View>
         ) : (
           <Animated.View
-            key="title"
+            key={title}
             entering={FadeInRight.springify().damping(20).stiffness(200)}
             style={{ flex: 1, justifyContent: "center" }}
           >

@@ -123,20 +123,20 @@ export const AddTaskModal: React.FC<AddTaskModalProps> = ({
       setInternalVisible(true);
       requestAnimationFrame(() => {
         sheetTranslateY.value = withSpring(0, {
-          damping: 24,
-          stiffness: 200,
+          damping: 30,
+          stiffness: 350,
           mass: 0.8,
         });
-        bgOpacity.value = withTiming(1, { duration: 250 });
+        bgOpacity.value = withTiming(1, { duration: 150 });
       });
     } else if (internalVisible) {
       Keyboard.dismiss();
       sheetTranslateY.value = withSpring(SCREEN_HEIGHT, {
-        damping: 24,
-        stiffness: 200,
+        damping: 30,
+        stiffness: 350,
         mass: 0.8,
       });
-      bgOpacity.value = withTiming(0, { duration: 250 }, (isFinished) => {
+      bgOpacity.value = withTiming(0, { duration: 150 }, (isFinished) => {
         if (isFinished) {
           runOnJS(setInternalVisible)(false);
         }
@@ -271,8 +271,8 @@ export const AddTaskModal: React.FC<AddTaskModalProps> = ({
             runOnJS(onClose)();
           } else {
             sheetTranslateY.value = withSpring(0, {
-              damping: 24,
-              stiffness: 200,
+              damping: 30,
+              stiffness: 350,
               mass: 0.8,
             });
             if (e.translationY < -40) {
@@ -339,16 +339,30 @@ export const AddTaskModal: React.FC<AddTaskModalProps> = ({
               selectionColor="#5BA4E5"
             />
             <View style={styles.actionButtons}>
-              <TouchableOpacity onPress={onClose} style={styles.topActionBtn}>
-                <X size={22} color={Colors.textSecondary} />
+              <TouchableOpacity
+                onPress={onClose}
+                style={[styles.topActionBtn, styles.topCancelBtn]}
+              >
+                <X size={20} color={Colors.textSecondary} />
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.topActionBtn}
+                style={[
+                  styles.topActionBtn,
+                  {
+                    backgroundColor: canSave
+                      ? `${selectedPriorityColor}25`
+                      : "rgba(255,255,255,0.05)",
+                    borderColor: canSave
+                      ? `${selectedPriorityColor}80`
+                      : "rgba(255,255,255,0.1)",
+                    borderWidth: 1.5,
+                  },
+                ]}
                 onPress={handleSave}
                 disabled={!canSave}
               >
                 <Check
-                  size={22}
+                  size={20}
                   color={
                     canSave ? selectedPriorityColor : "rgba(255,255,255,0.3)"
                   }
@@ -493,7 +507,15 @@ export const AddTaskModal: React.FC<AddTaskModalProps> = ({
                 </Pressable>
                 {showDatePicker && (
                   <View style={styles.pickerWrapper}>
-                    <InlineDatePicker dateIso={dueDate} onChange={setDueDate} />
+                    <StripedBackground
+                      color={selectedPriorityColor}
+                      opacity={0.04}
+                    />
+                    <InlineDatePicker
+                      dateIso={dueDate}
+                      onChange={setDueDate}
+                      accentColor={selectedPriorityColor}
+                    />
                   </View>
                 )}
                 <View style={styles.exoDivider} />
@@ -550,8 +572,13 @@ export const AddTaskModal: React.FC<AddTaskModalProps> = ({
                 </View>
                 {(showStartPicker || showEndPicker) && (
                   <View style={styles.pickerWrapper}>
+                    <StripedBackground
+                      color={selectedPriorityColor}
+                      opacity={0.04}
+                    />
                     <InlineTimePicker
                       key={showEndPicker ? "end" : "start"}
+                      accentColor={selectedPriorityColor}
                       time={showEndPicker ? endTime : startTime}
                       onChange={(val) => {
                         if (showStartPicker) setStartTime(val);
@@ -818,6 +845,11 @@ const styles = StyleSheet.create({
     minHeight: 40,
     marginRight: 12,
   },
+  topCancelBtn: {
+    backgroundColor: "rgba(0,0,0,0.2)",
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
   section: { marginBottom: 16 },
   sectionHeaderRow: {
     flexDirection: "row",
@@ -895,6 +927,8 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderColor: "rgba(255,255,255,0.06)",
     paddingVertical: 8,
+    backgroundColor: "rgba(0,0,0,0.1)",
+    overflow: "hidden",
   },
   locationBlock: {
     marginTop: 10,

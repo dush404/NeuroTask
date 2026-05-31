@@ -110,7 +110,7 @@ export const indexStyles = StyleSheet.create({
   },
   fabContainer: {
     position: "absolute",
-    bottom: 30,
+    bottom: 96,
     right: 30,
     alignItems: "center",
   },

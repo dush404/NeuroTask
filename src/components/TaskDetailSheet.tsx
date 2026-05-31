@@ -135,20 +135,20 @@ export const TaskDetailSheet: React.FC<Props> = ({
       setInternalVisible(true);
       requestAnimationFrame(() => {
         sheetTranslateY.value = withSpring(0, {
-          damping: 24,
-          stiffness: 200,
+          damping: 30,
+          stiffness: 350,
           mass: 0.8,
         });
-        bgOpacity.value = withTiming(1, { duration: 250 });
+        bgOpacity.value = withTiming(1, { duration: 150 });
       });
     } else if (internalVisible) {
       Keyboard.dismiss();
       sheetTranslateY.value = withSpring(SCREEN_HEIGHT, {
-        damping: 24,
-        stiffness: 200,
+        damping: 30,
+        stiffness: 350,
         mass: 0.8,
       });
-      bgOpacity.value = withTiming(0, { duration: 250 }, (isFinished) => {
+      bgOpacity.value = withTiming(0, { duration: 150 }, (isFinished) => {
         if (isFinished) {
           runOnJS(setInternalVisible)(false);
         }
@@ -291,8 +291,8 @@ export const TaskDetailSheet: React.FC<Props> = ({
             runOnJS(onClose)();
           } else {
             sheetTranslateY.value = withSpring(0, {
-              damping: 24,
-              stiffness: 200,
+              damping: 30,
+              stiffness: 350,
               mass: 0.8,
             });
             if (e.translationY < -40) {
@@ -346,6 +346,7 @@ export const TaskDetailSheet: React.FC<Props> = ({
             style={StyleSheet.absoluteFill}
             experimentalBlurMethod="dimezisBlurView"
           />
+          <StripedBackground color={selectedPriorityColor} opacity={0.06} />
           {/* Handle */}
           <GestureDetector gesture={handlePan}>
             <View style={styles.handleArea}>
@@ -357,21 +358,41 @@ export const TaskDetailSheet: React.FC<Props> = ({
           <View style={styles.topActions}>
             <Pressable
               onPress={handleDelete}
-              style={[styles.topActionBtn, { marginRight: "auto" }]}
+              style={[
+                styles.topActionBtn,
+                {
+                  backgroundColor: "rgba(0,0,0,0.2)",
+                  borderColor: "rgba(255,77,109,0.4)",
+                  marginRight: "auto",
+                },
+              ]}
             >
-              <Trash2 size={20} color={Colors.priorityHigh} />
+              <Trash2 size={18} color={Colors.priorityHigh} />
             </Pressable>
 
-            <TouchableOpacity onPress={onClose} style={styles.topActionBtn}>
-              <X size={22} color={Colors.textSecondary} />
+            <TouchableOpacity
+              onPress={onClose}
+              style={[styles.topActionBtn, styles.topCancelBtn]}
+            >
+              <X size={20} color={Colors.textSecondary} />
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.topActionBtn}
+              style={[
+                styles.topActionBtn,
+                {
+                  backgroundColor: canSave
+                    ? `${selectedPriorityColor}25`
+                    : "rgba(255,255,255,0.05)",
+                  borderColor: canSave
+                    ? `${selectedPriorityColor}80`
+                    : "rgba(255,255,255,0.1)",
+                },
+              ]}
               onPress={handleSave}
               disabled={!canSave}
             >
               <Check
-                size={22}
+                size={18}
                 color={
                   canSave ? selectedPriorityColor : "rgba(255,255,255,0.3)"
                 }
@@ -535,6 +556,10 @@ export const TaskDetailSheet: React.FC<Props> = ({
 
                 {showDatePicker && (
                   <View style={styles.pickerWrapper}>
+                    <StripedBackground
+                      color={selectedPriorityColor}
+                      opacity={0.04}
+                    />
                     <InlineDatePicker
                       dateIso={dueDate}
                       onChange={(iso) => {
@@ -602,6 +627,10 @@ export const TaskDetailSheet: React.FC<Props> = ({
 
                 {(showStartPicker || showEndPicker) && (
                   <View style={styles.pickerWrapper}>
+                    <StripedBackground
+                      color={selectedPriorityColor}
+                      opacity={0.04}
+                    />
                     <InlineTimePicker
                       key={showEndPicker ? "end" : "start"}
                       time={showEndPicker ? endTime : startTime}
@@ -892,6 +921,11 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     justifyContent: "center",
     alignItems: "center",
+    borderWidth: 1.5,
+  },
+  topCancelBtn: {
+    backgroundColor: "rgba(0,0,0,0.2)",
+    borderColor: "rgba(255,255,255,0.08)",
   },
   /* Header */
   headerRow: { flexDirection: "row", alignItems: "center", marginBottom: 24 },
@@ -1063,5 +1097,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderColor: "rgba(255,255,255,0.06)",
     paddingVertical: 8,
+    backgroundColor: "rgba(0,0,0,0.1)",
+    overflow: "hidden",
   },
 });

@@ -1,14 +1,15 @@
 import { BlurView } from "expo-blur";
+import { Play } from "lucide-react-native";
 import React, { useEffect, useRef, useState } from "react";
 import {
-    FlatList,
-    Modal,
-    NativeScrollEvent,
-    NativeSyntheticEvent,
-    Pressable,
-    StyleSheet,
-    Text,
-    View,
+  FlatList,
+  Modal,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
 import { Colors, Radius } from "../constants/theme";
 
@@ -97,7 +98,9 @@ export function GlassTimePicker({
 
           <View style={styles.wheelContainer}>
             {/* Selection Highlight */}
-            <View style={styles.selectionHighlight} />
+            <View style={styles.selectionHighlight} pointerEvents="none">
+              <Play size={16} color={Colors.accent} fill={Colors.accent} />
+            </View>
 
             {/* Hours Wheel */}
             <View style={styles.wheelWrapper}>
@@ -235,13 +238,12 @@ const styles = StyleSheet.create({
   },
   selectionHighlight: {
     position: "absolute",
-    top: 2 * ITEM_HEIGHT,
+    top: 2 * ITEM_HEIGHT, // Exactly mathematically centered
     height: ITEM_HEIGHT,
-    width: "100%",
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
+    left: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 1,
   },
   wheelWrapper: {
     width: 80,

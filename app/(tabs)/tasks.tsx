@@ -367,7 +367,7 @@ export default function TasksScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[
             styles.listContent,
-            { paddingHorizontal: 16 },
+            { paddingHorizontal: 16, paddingBottom: 120 },
           ]}
           ListEmptyComponent={
             <View style={styles.emptyState}>
@@ -384,7 +384,7 @@ export default function TasksScreen() {
 
         {/* ── FAB ───────────────────────────────────────────────────────── */}
         <TouchableOpacity
-          style={[styles.fab, { bottom: Math.max(insets.bottom, 16) + 12 }]}
+          style={[styles.fab, { bottom: Math.max(insets.bottom, 8) + 96 }]}
           onPress={handleCreateTask}
           activeOpacity={0.85}
         >
